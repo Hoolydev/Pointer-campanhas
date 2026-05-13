@@ -104,7 +104,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({
       queued: 0,
       pendingJobs: pendingJobs ?? 0,
-      processorReady: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
       qstash
     });
   }
@@ -165,7 +164,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   return NextResponse.json({
     queued: jobs.length,
     pendingJobs: jobs.length,
-    processorReady: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
     qstash
   });
 }

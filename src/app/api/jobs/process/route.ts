@@ -59,7 +59,18 @@ async function processJobs(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const supabase = createAdminClient();
+  let supabase: ReturnType<typeof createAdminClient>;
+
+  try {
+    supabase = createAdminClient();
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : "Supabase admin client unavailable."
+      },
+      { status: 500 }
+    );
+  }
   const { data: jobs, error } = await supabase
     .from("scheduled_jobs")
     .select("id, organization_id, target_id, job_type, payload")
