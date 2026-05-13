@@ -165,7 +165,9 @@ export default async function CampaignDetailPage({
                     </td>
                     <td className="px-4 py-3 text-slate-700">{contact.phone}</td>
                     <td className="px-4 py-3">
-                      <Badge tone="muted">{contact.status}</Badge>
+                      <Badge tone={contact.status === "failed" ? "danger" : "muted"}>
+                        {contact.status}
+                      </Badge>
                     </td>
                   </tr>
                 ))}
@@ -265,18 +267,27 @@ export default async function CampaignDetailPage({
                   ?.filter((job) => job.payload?.campaignId === id)
                   .slice(0, 10)
                   .map((job) => (
-                  <div key={job.id} className="flex items-center justify-between gap-3 rounded-md border p-3">
-                    <div>
-                      <p className="text-sm font-medium text-slate-950">{job.job_type}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {new Intl.DateTimeFormat("pt-BR", {
-                          dateStyle: "short",
-                          timeStyle: "short"
-                        }).format(new Date(job.run_at))}
-                      </p>
+                    <div key={job.id} className="rounded-md border p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-slate-950">{job.job_type}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {new Intl.DateTimeFormat("pt-BR", {
+                              dateStyle: "short",
+                              timeStyle: "short"
+                            }).format(new Date(job.run_at))}
+                          </p>
+                        </div>
+                        <Badge tone={job.status === "done" ? "success" : job.status === "failed" ? "danger" : "muted"}>
+                          {job.status}
+                        </Badge>
+                      </div>
+                      {typeof job.payload?.error === "string" ? (
+                        <p className="mt-2 rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-xs leading-5 text-red-700">
+                          {job.payload.error}
+                        </p>
+                      ) : null}
                     </div>
-                    <Badge tone={job.status === "done" ? "success" : "muted"}>{job.status}</Badge>
-                  </div>
                   ))
               ) : (
                 <p className="text-sm text-muted-foreground">Nenhum job criado ainda.</p>

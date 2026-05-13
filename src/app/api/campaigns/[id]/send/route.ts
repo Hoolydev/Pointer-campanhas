@@ -72,7 +72,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     .select("id, name, phone")
     .eq("campaign_id", id)
     .eq("organization_id", profile.organization_id)
-    .eq("status", "pending")
+    .in("status", ["pending", "failed"])
     .limit(parsed.data.limit)
     .returns<ContactRow[]>();
 
