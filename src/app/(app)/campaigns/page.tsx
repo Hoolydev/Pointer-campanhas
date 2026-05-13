@@ -11,9 +11,12 @@ type CampaignRow = {
   id: string;
   name: string;
   status: "draft" | "active" | "paused" | "finished";
-  campaign_type: "standard" | "test";
+  campaign_type: "standard" | "test" | null;
   created_at: string;
-  contacts: { count: number }[];
+};
+
+type CampaignWithCount = CampaignRow & {
+  contacts_count: number;
 };
 
 const statusLabels = {
@@ -26,14 +29,15 @@ const statusLabels = {
 export default async function CampaignsPage() {
   const supabase = await createClient();
   const { profile } = await getCurrentProfile(supabase);
-  const { data: campaigns } = profile
+  const { data: campaignRows, error: campaignsError } = profile
     ? await supabase
         .from("campaigns")
-        .select("id, name, status, campaign_type, created_at, contacts(count)")
+        .select("id, name, status, campaign_type, created_at")
         .eq("organization_id", profile.organization_id)
         .order("created_at", { ascending: false })
         .returns<CampaignRow[]>()
     : { data: [] };
+  const campaigns = profile ? await withContactCounts(supabase, campaignRows ?? []) : [];
 
   return (
     <>
@@ -59,6 +63,11 @@ export default async function CampaignsPage() {
           </div>
         }
       />
+      {campaignsError ? (
+        <section className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          Nao foi possivel carregar as campanhas: {campaignsError.message}
+        </section>
+      ) : null}
       {campaigns && campaigns.length > 0 ? (
         <section className="overflow-hidden rounded-lg border bg-card shadow-sm">
           <table className="w-full border-collapse text-left text-sm">
@@ -90,7 +99,7 @@ export default async function CampaignsPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3 text-slate-700">
-                    {campaign.contacts[0]?.count ?? 0}
+                    {campaign.contacts_count}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">
                     {new Intl.DateTimeFormat("pt-BR").format(new Date(campaign.created_at))}
@@ -109,4 +118,30 @@ export default async function CampaignsPage() {
       )}
     </>
   );
+}
+
+async function withContactCounts(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  campaigns: CampaignRow[]
+): Promise<CampaignWithCount[]> {
+  if (campaigns.length === 0) {
+    return [];
+  }
+
+  const counts = await Promise.all(
+    campaigns.map(async (campaign) => {
+      const { count } = await supabase
+        .from("contacts")
+        .select("*", { count: "exact", head: true })
+        .eq("campaign_id", campaign.id);
+
+      return [campaign.id, count ?? 0] as const;
+    })
+  );
+  const countMap = new Map(counts);
+
+  return campaigns.map((campaign) => ({
+    ...campaign,
+    contacts_count: countMap.get(campaign.id) ?? 0
+  }));
 }
