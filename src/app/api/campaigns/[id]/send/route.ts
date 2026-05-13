@@ -1,0 +1,128 @@
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { getCurrentProfile } from "@/lib/auth/organization";
+import { renderTemplate } from "@/lib/templates";
+import { createClient } from "@/lib/supabase/server";
+import { buildTemplateComponents } from "@/services/meta/template-components";
+
+const sendSchema = z.object({
+  intervalSeconds: z.number().int().min(10).max(3600).default(30),
+  limit: z.number().int().min(1).max(500).default(100)
+});
+
+type ContactRow = {
+  id: string;
+  name: string | null;
+  phone: string;
+};
+
+type CampaignRow = {
+  id: string;
+  organization_id: string;
+  initial_message: string | null;
+  meta_template_name: string | null;
+  meta_template_language: string;
+  meta_template_body_params: unknown;
+  meta_header_media_type: string | null;
+  meta_header_media_url: string | null;
+  meta_header_media_id: string | null;
+};
+
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const body = await request.json().catch(() => ({}));
+  const parsed = sendSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Parametros invalidos." }, { status: 400 });
+  }
+
+  const { id } = await params;
+  const supabase = await createClient();
+  const { profile, error: profileError } = await getCurrentProfile(supabase);
+
+  if (!profile) {
+    return NextResponse.json({ error: profileError }, { status: 401 });
+  }
+
+  const { data: campaign } = await supabase
+    .from("campaigns")
+    .select("id, organization_id, initial_message, meta_template_name, meta_template_language, meta_template_body_params, meta_header_media_type, meta_header_media_url, meta_header_media_id")
+    .eq("id", id)
+    .eq("organization_id", profile.organization_id)
+    .single<CampaignRow>();
+
+  if (!campaign) {
+    return NextResponse.json({ error: "Campanha nao encontrada." }, { status: 404 });
+  }
+
+  if (!campaign.meta_template_name) {
+    return NextResponse.json(
+      { error: "Configure um template Meta aprovado antes de disparar a campanha." },
+      { status: 400 }
+    );
+  }
+
+  const { data: contacts, error: contactsError } = await supabase
+    .from("contacts")
+    .select("id, name, phone")
+    .eq("campaign_id", id)
+    .eq("organization_id", profile.organization_id)
+    .eq("status", "pending")
+    .limit(parsed.data.limit)
+    .returns<ContactRow[]>();
+
+  if (contactsError) {
+    return NextResponse.json({ error: contactsError.message }, { status: 500 });
+  }
+
+  if (!contacts?.length) {
+    return NextResponse.json({ queued: 0 });
+  }
+
+  const now = Date.now();
+  const jobs = contacts.map((contact, index) => ({
+    organization_id: profile.organization_id,
+    job_type: "campaign_send_message",
+    target_id: contact.id,
+    status: "pending",
+    run_at: new Date(now + index * parsed.data.intervalSeconds * 1000).toISOString(),
+      payload: {
+        campaignId: campaign.id,
+        contactId: contact.id,
+        phone: contact.phone,
+        templateName: campaign.meta_template_name,
+        languageCode: campaign.meta_template_language || "pt_BR",
+        components: buildTemplateComponents({
+          params: campaign.meta_template_body_params,
+          contact,
+          header: {
+            type: campaign.meta_header_media_type,
+            url: campaign.meta_header_media_url,
+            id: campaign.meta_header_media_id
+          }
+        }),
+        text: renderTemplate(campaign.initial_message || "", {
+          nome: contact.name,
+        name: contact.name,
+        telefone: contact.phone,
+        phone: contact.phone
+      })
+    }
+  }));
+
+  const { error: jobsError } = await supabase.from("scheduled_jobs").insert(jobs);
+
+  if (jobsError) {
+    return NextResponse.json({ error: jobsError.message }, { status: 500 });
+  }
+
+  await supabase
+    .from("contacts")
+    .update({ status: "queued" })
+    .in(
+      "id",
+      contacts.map((contact) => contact.id)
+    );
+
+  return NextResponse.json({ queued: jobs.length });
+}
