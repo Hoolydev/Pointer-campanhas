@@ -1,8 +1,8 @@
 "use client";
 
-import { useActionState } from "react";
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Send } from "lucide-react";
-import { createTestCampaignAction } from "./actions";
 
 type AgentOption = {
   id: string;
@@ -37,11 +37,39 @@ export function TestCampaignForm({
   metaPhone: MetaPhoneResult;
   metaTemplates: MetaTemplatesResult;
 }) {
-  const [state, formAction, pending] = useActionState(createTestCampaignAction, null);
+  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
   const approvedTemplates = metaTemplates.data.filter((template) => template.status === "APPROVED");
 
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+
+    setError(null);
+    startTransition(async () => {
+      const response = await fetch("/api/campaigns/test", {
+        method: "POST",
+        body: formData
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        campaignId?: string;
+        error?: string;
+      };
+
+      if (!response.ok || !payload.campaignId) {
+        setError(payload.error ?? "Nao foi possivel criar a campanha de teste.");
+        return;
+      }
+
+      router.push(`/campaigns/${payload.campaignId}`);
+      router.refresh();
+    });
+  }
+
   return (
-    <form action={formAction} className="grid gap-6 lg:grid-cols-[1fr_360px]">
+    <form onSubmit={handleSubmit} className="grid gap-6 lg:grid-cols-[1fr_360px]">
       <section className="space-y-5 rounded-lg border bg-card p-6 shadow-sm">
         <Field name="name" label="Nome do teste" placeholder="Teste Nay - meu numero" defaultValue="Campanha de teste" />
         <label className="block space-y-2">
@@ -113,9 +141,9 @@ export function TestCampaignForm({
             placeholder={"Silfarney, 62982540748\nMaria, (62) 99999-9999"}
           />
         </section>
-        {state?.error ? (
+        {error ? (
           <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-            {state.error}
+            {error}
           </p>
         ) : null}
         <button
