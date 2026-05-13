@@ -3,6 +3,7 @@ import { Badge } from "@/components/badge";
 import { PageHeader } from "@/components/page-header";
 import { getCurrentProfile } from "@/lib/auth/organization";
 import { createClient } from "@/lib/supabase/server";
+import { DeleteCampaignButton } from "./delete-campaign-button";
 import { SendCampaignButton } from "./send-campaign-button";
 
 type Campaign = {
@@ -127,7 +128,12 @@ export default async function CampaignDetailPage({
       <PageHeader
         title={campaign.name}
         description="Detalhes da campanha e contatos importados."
-        action={<SendCampaignButton campaignId={campaign.id} />}
+        action={
+          <div className="flex flex-col items-end gap-2 sm:flex-row">
+            <SendCampaignButton campaignId={campaign.id} />
+            <DeleteCampaignButton campaignId={campaign.id} campaignName={campaign.name} />
+          </div>
+        }
       />
       <section className="grid gap-6 lg:grid-cols-[1fr_360px]">
         <div className="overflow-hidden rounded-lg border bg-card shadow-sm">

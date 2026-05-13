@@ -6,6 +6,7 @@ import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { getCurrentProfile } from "@/lib/auth/organization";
 import { createClient } from "@/lib/supabase/server";
+import { DeleteCampaignButton } from "./[id]/delete-campaign-button";
 
 type CampaignRow = {
   id: string;
@@ -76,6 +77,7 @@ export default async function CampaignsPage() {
                 <th className="px-4 py-3 font-semibold">Status</th>
                 <th className="px-4 py-3 font-semibold">Contatos</th>
                 <th className="px-4 py-3 font-semibold">Criada em</th>
+                <th className="px-4 py-3 text-right font-semibold">Acoes</th>
               </tr>
             </thead>
             <tbody className="divide-y">
@@ -101,6 +103,13 @@ export default async function CampaignsPage() {
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">
                     {new Intl.DateTimeFormat("pt-BR").format(new Date(campaign.created_at))}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <DeleteCampaignButton
+                      campaignId={campaign.id}
+                      campaignName={campaign.name}
+                      compact
+                    />
                   </td>
                 </tr>
               ))}
