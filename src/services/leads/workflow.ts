@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { LeadQualification } from "@/agents/lead-agent";
 import { renderTemplate } from "@/lib/templates";
 import { sendUazapiMessage } from "@/services/uazapi/send-message";
+import { publishJobProcessor } from "@/services/qstash/jobs";
 
 type WorkflowInput = {
   supabase: SupabaseClient;
@@ -92,14 +93,21 @@ export async function enqueueHauzappQualifiedLead({
   leadId: string;
   reason: string;
 }) {
+  const runAt = new Date().toISOString();
+
   await supabase.from("scheduled_jobs").insert({
     organization_id: organizationId,
     job_type: "hauzapp_create_qualified_lead",
     target_id: leadId,
     status: "pending",
-    run_at: new Date().toISOString(),
+    run_at: runAt,
     payload: { reason }
   });
+
+  await publishJobProcessor({
+    runAt,
+    reason: "hauzapp_create_qualified_lead"
+  }).catch(() => null);
 }
 
 export async function sendQualifiedLeadToBroker({
@@ -131,14 +139,20 @@ export async function sendQualifiedLeadToBroker({
   const { data: broker } = await brokerQuery.maybeSingle<Broker>();
 
   if (!broker) {
+    const runAt = new Date().toISOString();
+
     await supabase.from("scheduled_jobs").insert({
       organization_id: organizationId,
       job_type: "hauzapp_create_qualified_lead",
       target_id: leadId,
       status: "pending",
-      run_at: new Date().toISOString(),
+      run_at: runAt,
       payload: { reason: "qualified_without_active_broker" }
     });
+    await publishJobProcessor({
+      runAt,
+      reason: "qualified_without_active_broker"
+    }).catch(() => null);
     await supabase
       .from("leads")
       .update({ stage: "qualified" })
@@ -230,15 +244,18 @@ Responda aqui com o status do atendimento.`,
     });
   }
 
+  const brokerCheckRunAt = new Date(
+    Date.now() + (brokerAgent?.broker_followup_minutes ?? 30) * 60 * 1000
+  ).toISOString();
+  const hauzappRunAt = new Date().toISOString();
+
   await Promise.all([
     supabase.from("scheduled_jobs").insert({
       organization_id: organizationId,
       job_type: "check_broker_response",
       target_id: assignment?.id ?? null,
       status: "pending",
-      run_at: new Date(
-        Date.now() + (brokerAgent?.broker_followup_minutes ?? 30) * 60 * 1000
-      ).toISOString(),
+      run_at: brokerCheckRunAt,
       payload: { leadId, brokerId: broker.id }
     }),
     supabase.from("scheduled_jobs").insert({
@@ -246,13 +263,18 @@ Responda aqui com o status do atendimento.`,
       job_type: "hauzapp_create_qualified_lead",
       target_id: leadId,
       status: "pending",
-      run_at: new Date().toISOString(),
+      run_at: hauzappRunAt,
       payload: {
         brokerName: broker.name,
         brokerPhone: broker.phone
       }
     })
   ]);
+
+  await publishJobProcessor({
+    runAt: hauzappRunAt,
+    reason: "qualified_lead_to_broker"
+  }).catch(() => null);
 
   return assignment;
 }

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { renderTemplate } from "@/lib/templates";
 import { sendMetaMessage } from "@/services/meta/send-message";
+import { publishJobProcessor } from "@/services/qstash/jobs";
 
 type ConversationForFollowup = {
   id: string;
@@ -56,21 +57,26 @@ export async function scheduleLeadFollowups({
 
   const base = new Date(scheduledAfter).getTime();
 
-  await supabase.from("scheduled_jobs").insert(
-    rules.map((rule) => ({
-      organization_id: organizationId,
-      job_type: "lead_followup",
-      target_id: conversationId,
-      status: "pending",
-      run_at: new Date(base + rule.delay_minutes * 60 * 1000).toISOString(),
-      payload: {
-        conversationId,
-        contactId,
-        ruleId: rule.id,
-        scheduledAfter
-      }
-    }))
-  );
+  const jobs = rules.map((rule) => ({
+    organization_id: organizationId,
+    job_type: "lead_followup",
+    target_id: conversationId,
+    status: "pending",
+    run_at: new Date(base + rule.delay_minutes * 60 * 1000).toISOString(),
+    payload: {
+      conversationId,
+      contactId,
+      ruleId: rule.id,
+      scheduledAfter
+    }
+  }));
+
+  await supabase.from("scheduled_jobs").insert(jobs);
+
+  await publishJobProcessor({
+    runAt: jobs[0]?.run_at,
+    reason: "lead_followups"
+  }).catch(() => null);
 }
 
 export async function processLeadFollowup({
@@ -119,12 +125,14 @@ export async function processLeadFollowup({
       .from("contacts")
       .update({ status: "requires_template" })
       .eq("id", conversation.contacts.id);
+    const runAt = new Date().toISOString();
+
     await supabase.from("scheduled_jobs").insert({
       organization_id: organizationId,
       job_type: "lead_template_followup",
       target_id: conversation.id,
       status: "pending",
-      run_at: new Date().toISOString(),
+      run_at: runAt,
       payload: {
         conversationId: conversation.id,
         contactId: conversation.contacts.id,
@@ -134,6 +142,12 @@ export async function processLeadFollowup({
         languageCode: process.env.META_DEFAULT_TEMPLATE_LANGUAGE || "pt_BR"
       }
     });
+
+    await publishJobProcessor({
+      runAt,
+      reason: "lead_template_followup"
+    }).catch(() => null);
+
     return { status: "done", reason: "requires_template" };
   }
 

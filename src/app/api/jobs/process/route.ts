@@ -6,6 +6,10 @@ import { processLeadFollowup, scheduleLeadFollowups } from "@/services/followups
 import { sendMetaMessage } from "@/services/meta/send-message";
 import { sendMetaTemplate } from "@/services/meta/send-template";
 import { sendQualifiedLeadToBroker } from "@/services/leads/workflow";
+import {
+  publishNextPendingJobProcessor,
+  verifyQstashRequest
+} from "@/services/qstash/jobs";
 
 type SendJobPayload = {
   campaignId: string;
@@ -34,10 +38,24 @@ export async function GET(request: Request) {
 }
 
 async function processJobs(request: Request) {
+  const body = await request.text();
   const secret = process.env.TRIGGER_SECRET_KEY || process.env.CRON_SECRET;
   const authorization = request.headers.get("authorization");
+  const hasQstashSignature = Boolean(request.headers.get("upstash-signature"));
 
-  if (secret && authorization !== `Bearer ${secret}`) {
+  if (hasQstashSignature) {
+    try {
+      const verified = await verifyQstashRequest(request, body);
+
+      if (!verified) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
+    } catch {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+  } else if (secret && authorization !== `Bearer ${secret}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  } else if (!secret && (process.env.QSTASH_TOKEN || process.env.QSTASH_CURRENT_SIGNING_KEY)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -246,7 +264,12 @@ async function processJobs(request: Request) {
     }
   }
 
-  return NextResponse.json({ processed: results.length, results });
+  const nextProcessor = await publishNextPendingJobProcessor(supabase).catch((error) => ({
+    published: false,
+    reason: error instanceof Error ? error.message : "qstash_publish_failed"
+  }));
+
+  return NextResponse.json({ processed: results.length, results, nextProcessor });
 }
 
 async function processMetaSendMessage(

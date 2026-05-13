@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { splitMessageForWhatsApp, typingDelayMs } from "@/services/messaging/split-message";
+import { publishJobProcessor } from "@/services/qstash/jobs";
 
 export async function enqueueHumanizedMetaMessages({
   supabase,
@@ -27,28 +28,33 @@ export async function enqueueHumanizedMetaMessages({
     return 0;
   }
 
-  await supabase.from("scheduled_jobs").insert(
-    parts.map((part, index) => {
-      offset += index === 0 ? 0 : typingDelayMs(parts[index - 1], wordsPerMinute);
+  const jobs = parts.map((part, index) => {
+    offset += index === 0 ? 0 : typingDelayMs(parts[index - 1], wordsPerMinute);
 
-      return {
-        organization_id: organizationId,
-        job_type: "meta_send_message",
-        target_id: conversationId,
-        status: "pending",
-        run_at: new Date(Date.now() + offset).toISOString(),
-        payload: {
-          conversationId,
-          contactId,
-          phone,
-          text: part,
-          humanized: true,
-          partIndex: index + 1,
-          totalParts: parts.length
-        }
-      };
-    })
-  );
+    return {
+      organization_id: organizationId,
+      job_type: "meta_send_message",
+      target_id: conversationId,
+      status: "pending",
+      run_at: new Date(Date.now() + offset).toISOString(),
+      payload: {
+        conversationId,
+        contactId,
+        phone,
+        text: part,
+        humanized: true,
+        partIndex: index + 1,
+        totalParts: parts.length
+      }
+    };
+  });
+
+  await supabase.from("scheduled_jobs").insert(jobs);
+
+  await publishJobProcessor({
+    runAt: jobs[0]?.run_at,
+    reason: "humanized_meta_messages"
+  }).catch(() => null);
 
   return parts.length;
 }

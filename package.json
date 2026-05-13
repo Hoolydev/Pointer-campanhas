@@ -12,6 +12,7 @@
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.46.1",
+    "@upstash/qstash": "^2.11.0",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "csv-parse": "^6.2.1",

@@ -122,9 +122,17 @@ curl -X POST http://localhost:3001/api/jobs/process \
   -H "Authorization: Bearer $TRIGGER_SECRET_KEY"
 ```
 
-Em producao, conecte este endpoint a Trigger.dev, QStash ou cron protegido. O `vercel.json`
-ja agenda `/api/jobs/process` a cada 5 minutos; configure `CRON_SECRET` ou
-`TRIGGER_SECRET_KEY` no ambiente para proteger chamadas externas.
+Em producao, o sistema publica automaticamente o processador no QStash quando cria
+jobs em `scheduled_jobs`. Configure `APP_URL` com o dominio publico da Vercel e as
+chaves do QStash. O endpoint tambem aceita chamada manual protegida por
+`TRIGGER_SECRET_KEY` ou `CRON_SECRET`.
+
+```env
+APP_URL=https://seu-dominio.vercel.app
+QSTASH_TOKEN=
+QSTASH_CURRENT_SIGNING_KEY=
+QSTASH_NEXT_SIGNING_KEY=
+```
 
 ## Variaveis Meta WhatsApp
 

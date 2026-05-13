@@ -4,6 +4,7 @@ import { getCurrentProfile } from "@/lib/auth/organization";
 import { renderTemplate } from "@/lib/templates";
 import { createClient } from "@/lib/supabase/server";
 import { buildTemplateComponents } from "@/services/meta/template-components";
+import { publishJobProcessor } from "@/services/qstash/jobs";
 
 const sendSchema = z.object({
   intervalSeconds: z.number().int().min(10).max(3600).default(30),
@@ -124,5 +125,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       contacts.map((contact) => contact.id)
     );
 
-  return NextResponse.json({ queued: jobs.length });
+  const qstash = await publishJobProcessor({
+    runAt: jobs[0]?.run_at,
+    reason: "campaign_send"
+  }).catch((error) => ({
+    published: false,
+    reason: error instanceof Error ? error.message : "qstash_publish_failed"
+  }));
+
+  return NextResponse.json({ queued: jobs.length, qstash });
 }
