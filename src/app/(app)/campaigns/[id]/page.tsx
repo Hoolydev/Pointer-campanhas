@@ -19,7 +19,6 @@ type Campaign = {
   meta_header_media_id: string | null;
   agent_prompt: string | null;
   status: "draft" | "active" | "paused" | "finished";
-  campaign_type: "standard" | "test";
 };
 
 type Agent = {
@@ -80,7 +79,7 @@ export default async function CampaignDetailPage({
   ] = await Promise.all([
     supabase
       .from("campaigns")
-      .select("id, name, agent_id, property_description, initial_message, meta_template_name, meta_template_language, meta_template_body_params, meta_header_media_type, meta_header_media_url, meta_header_media_id, agent_prompt, status, campaign_type")
+      .select("id, name, agent_id, property_description, initial_message, meta_template_name, meta_template_language, meta_template_body_params, meta_header_media_type, meta_header_media_url, meta_header_media_id, agent_prompt, status")
       .eq("id", id)
       .eq("organization_id", profile.organization_id)
       .single<Campaign>(),
@@ -140,7 +139,6 @@ export default async function CampaignDetailPage({
               </p>
             </div>
             <div className="flex gap-2">
-              {campaign.campaign_type === "test" ? <Badge tone="muted">Teste</Badge> : null}
               <Badge tone="muted">{campaign.status}</Badge>
             </div>
           </div>

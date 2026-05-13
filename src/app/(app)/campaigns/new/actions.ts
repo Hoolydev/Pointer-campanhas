@@ -132,7 +132,6 @@ export async function createCampaignAction(
       organization_id: profile.organization_id,
       created_by: profile.id,
       status: "draft",
-      campaign_type: "standard",
       name: parsed.data.name,
       property_description: `Campanha criada com o agente selecionado e template ${parsed.data.meta_template_name}.
 

@@ -107,7 +107,6 @@ export async function createTestCampaignAction(
     .insert({
       organization_id: profile.organization_id,
       created_by: profile.id,
-      campaign_type: "test",
       status: "draft",
       name: parsed.data.name,
       property_description: `Campanha de teste.

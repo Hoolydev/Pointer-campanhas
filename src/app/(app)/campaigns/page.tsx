@@ -11,7 +11,6 @@ type CampaignRow = {
   id: string;
   name: string;
   status: "draft" | "active" | "paused" | "finished";
-  campaign_type: "standard" | "test" | null;
   created_at: string;
 };
 
@@ -32,7 +31,7 @@ export default async function CampaignsPage() {
   const { data: campaignRows, error: campaignsError } = profile
     ? await supabase
         .from("campaigns")
-        .select("id, name, status, campaign_type, created_at")
+        .select("id, name, status, created_at")
         .eq("organization_id", profile.organization_id)
         .order("created_at", { ascending: false })
         .returns<CampaignRow[]>()
@@ -95,7 +94,6 @@ export default async function CampaignsPage() {
                       <Badge tone={campaign.status === "active" ? "success" : "muted"}>
                         {statusLabels[campaign.status]}
                       </Badge>
-                      {campaign.campaign_type === "test" ? <Badge tone="muted">Teste</Badge> : null}
                     </div>
                   </td>
                   <td className="px-4 py-3 text-slate-700">
