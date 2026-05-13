@@ -28,6 +28,8 @@ type MetaTemplatesResult = {
   error: string | null;
 };
 
+const MAX_ROUTE_UPLOAD_BYTES = 4 * 1024 * 1024;
+
 export function TestCampaignForm({
   agents,
   metaPhone,
@@ -46,6 +48,19 @@ export function TestCampaignForm({
     event.preventDefault();
     const form = event.currentTarget;
     const formData = new FormData(form);
+    const mediaFile = formData.get("meta_header_media_file");
+    const mediaId = String(formData.get("meta_header_media_id") ?? "").trim();
+
+    if (mediaFile instanceof File && mediaFile.size > MAX_ROUTE_UPLOAD_BYTES) {
+      if (mediaId) {
+        formData.delete("meta_header_media_file");
+      } else {
+        setError(
+          "Esse arquivo passa do limite de upload da Vercel. Envie a midia para a Meta primeiro e cole o Media ID, ou use um arquivo com ate 4 MB."
+        );
+        return;
+      }
+    }
 
     setError(null);
     startTransition(async () => {
@@ -122,6 +137,9 @@ export function TestCampaignForm({
             accept="image/*,video/*,.pdf"
             className="block w-full rounded-md border bg-white px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium"
           />
+          <p className="text-xs leading-5 text-muted-foreground">
+            Na Vercel, anexos acima de 4 MB precisam ser enviados pela Meta antes. Depois cole o Media ID abaixo.
+          </p>
           <Field name="meta_header_media_id" label="Media ID da Meta" placeholder="Opcional" required={false} />
         </section>
       </section>

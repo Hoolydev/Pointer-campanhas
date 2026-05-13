@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { UploadCloud } from "lucide-react";
 import { createCampaignAction } from "./actions";
 
@@ -29,6 +29,8 @@ type MetaTemplatesResult = {
   error: string | null;
 };
 
+const MAX_ROUTE_UPLOAD_BYTES = 4 * 1024 * 1024;
+
 export function CampaignForm({
   agents,
   metaPhone,
@@ -39,10 +41,35 @@ export function CampaignForm({
   metaTemplates: MetaTemplatesResult;
 }) {
   const [state, formAction, pending] = useActionState(createCampaignAction, null);
+  const [clientError, setClientError] = useState<string | null>(null);
   const approvedTemplates = metaTemplates.data.filter((template) => template.status === "APPROVED");
 
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    const form = event.currentTarget;
+    const fileInput = form.elements.namedItem("meta_header_media_file") as HTMLInputElement | null;
+    const mediaIdInput = form.elements.namedItem("meta_header_media_id") as HTMLInputElement | null;
+    const file = fileInput?.files?.[0];
+    const mediaId = mediaIdInput?.value.trim();
+
+    if (file && file.size > MAX_ROUTE_UPLOAD_BYTES) {
+      if (mediaId) {
+        fileInput.value = "";
+        setClientError(null);
+        return;
+      }
+
+      event.preventDefault();
+      setClientError(
+        "Esse arquivo passa do limite de upload da Vercel. Envie a midia para a Meta primeiro e cole o Media ID, ou use um arquivo com ate 4 MB."
+      );
+      return;
+    }
+
+    setClientError(null);
+  }
+
   return (
-    <form action={formAction} className="grid gap-6 lg:grid-cols-[1fr_360px]">
+    <form action={formAction} onSubmit={handleSubmit} className="grid gap-6 lg:grid-cols-[1fr_360px]">
       <section className="space-y-5 rounded-lg border bg-card p-6 shadow-sm">
         <Field label="Nome interno da campanha" name="name" placeholder="Nativ - Lista Maio" />
         <section className="rounded-md border bg-slate-50 p-4">
@@ -139,6 +166,9 @@ export function CampaignForm({
             accept="image/*,video/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx"
             className="block w-full rounded-md border bg-white px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium"
           />
+          <p className="text-xs leading-5 text-muted-foreground">
+            Na Vercel, anexos acima de 4 MB precisam ser enviados pela Meta antes. Depois cole o Media ID abaixo.
+          </p>
           <Field
             label="Media ID da Meta"
             name="meta_header_media_id"
@@ -167,9 +197,9 @@ export function CampaignForm({
           />
         </section>
 
-        {state?.error ? (
+        {clientError || state?.error ? (
           <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-            {state.error}
+            {clientError || state?.error}
           </p>
         ) : null}
 
