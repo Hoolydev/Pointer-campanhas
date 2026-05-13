@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Send } from "lucide-react";
 
 export function SendCampaignButton({ campaignId }: { campaignId: string }) {
+  const router = useRouter();
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -24,15 +26,45 @@ export function SendCampaignButton({ campaignId }: { campaignId: string }) {
 
     const payload = (await response.json().catch(() => ({}))) as {
       queued?: number;
+      pendingJobs?: number;
+      processorReady?: boolean;
+      qstash?: {
+        published?: boolean;
+        reason?: string;
+      };
       error?: string;
     };
 
     setPending(false);
-    setMessage(
-      response.ok
-        ? `${payload.queued ?? 0} contato(s) enfileirado(s).`
-        : payload.error ?? "Nao foi possivel enfileirar os disparos."
-    );
+
+    if (!response.ok) {
+      setMessage(payload.error ?? "Nao foi possivel enfileirar os disparos.");
+      return;
+    }
+
+    if (payload.processorReady === false) {
+      setMessage(
+        `${payload.queued ?? 0} contato(s) na fila, mas falta SUPABASE_SERVICE_ROLE_KEY na Vercel para o QStash processar os disparos.`
+      );
+      router.refresh();
+      return;
+    }
+
+    if ((payload.queued ?? 0) > 0) {
+      setMessage(`${payload.queued} contato(s) enfileirado(s).`);
+      router.refresh();
+      return;
+    }
+
+    if ((payload.pendingJobs ?? 0) > 0) {
+      setMessage(
+        `${payload.pendingJobs} disparo(s) ja estavam na fila. Reativei o processador QStash.`
+      );
+      router.refresh();
+      return;
+    }
+
+    setMessage("Nenhum contato pendente para enfileirar.");
   }
 
   return (

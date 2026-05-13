@@ -29,6 +29,10 @@ type CampaignRow = {
   meta_header_media_id: string | null;
 };
 
+type QstashPublishResult =
+  | Awaited<ReturnType<typeof publishJobProcessor>>
+  | { published: false; reason: string };
+
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const body = await request.json().catch(() => ({}));
   const parsed = sendSchema.safeParse(body);
@@ -77,7 +81,32 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   if (!contacts?.length) {
-    return NextResponse.json({ queued: 0 });
+    const { count: pendingJobs } = await supabase
+      .from("scheduled_jobs")
+      .select("*", { count: "exact", head: true })
+      .eq("organization_id", profile.organization_id)
+      .eq("job_type", "campaign_send_message")
+      .eq("status", "pending")
+      .contains("payload", { campaignId: campaign.id });
+
+    let qstash: QstashPublishResult = { published: false, reason: "no_pending_contacts" };
+
+    if ((pendingJobs ?? 0) > 0) {
+      qstash = await publishJobProcessor({
+        runAt: new Date(),
+        reason: "campaign_send_retry"
+      }).catch((error) => ({
+        published: false,
+        reason: error instanceof Error ? error.message : "qstash_publish_failed"
+      }));
+    }
+
+    return NextResponse.json({
+      queued: 0,
+      pendingJobs: pendingJobs ?? 0,
+      processorReady: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+      qstash
+    });
   }
 
   const now = Date.now();
@@ -133,5 +162,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     reason: error instanceof Error ? error.message : "qstash_publish_failed"
   }));
 
-  return NextResponse.json({ queued: jobs.length, qstash });
+  return NextResponse.json({
+    queued: jobs.length,
+    pendingJobs: jobs.length,
+    processorReady: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+    qstash
+  });
 }
