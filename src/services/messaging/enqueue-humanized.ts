@@ -28,6 +28,14 @@ export async function enqueueHumanizedMetaMessages({
     return 0;
   }
 
+  await supabase
+    .from("scheduled_jobs")
+    .update({ status: "cancelled" })
+    .eq("organization_id", organizationId)
+    .eq("target_id", conversationId)
+    .eq("job_type", "meta_send_message")
+    .eq("status", "pending");
+
   const jobs = parts.map((part, index) => {
     offset += index === 0 ? 0 : typingDelayMs(parts[index - 1], wordsPerMinute);
 

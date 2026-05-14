@@ -308,6 +308,41 @@ async function processMetaSendMessage(
     throw new Error("Payload invalido para meta_send_message.");
   }
 
+  if (job.payload.humanized) {
+    const { data: conversation } = await supabase
+      .from("conversations")
+      .select("ai_enabled")
+      .eq("id", conversationId)
+      .maybeSingle<{ ai_enabled: boolean }>();
+
+    if (conversation?.ai_enabled === false) {
+      await supabase
+        .from("scheduled_jobs")
+        .update({ status: "cancelled", executed_at: new Date().toISOString() })
+        .eq("id", job.id);
+      return;
+    }
+  }
+
+  const duplicateSince = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  const { data: duplicateMessage } = await supabase
+    .from("messages")
+    .select("id")
+    .eq("conversation_id", conversationId)
+    .eq("direction", "outbound")
+    .eq("content", text)
+    .gte("created_at", duplicateSince)
+    .limit(1)
+    .maybeSingle<{ id: string }>();
+
+  if (duplicateMessage) {
+    await supabase
+      .from("scheduled_jobs")
+      .update({ status: "cancelled", executed_at: new Date().toISOString() })
+      .eq("id", job.id);
+    return;
+  }
+
   const metaResult = await sendMetaMessage({ phone, text });
   const sentAt = new Date().toISOString();
 
