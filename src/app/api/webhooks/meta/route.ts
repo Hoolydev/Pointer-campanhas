@@ -20,6 +20,12 @@ type MetaMessage = {
   timestamp?: string;
   type?: string;
   text?: { body?: string };
+  button?: { text?: string; payload?: string };
+  interactive?: {
+    type?: string;
+    button_reply?: { id?: string; title?: string };
+    list_reply?: { id?: string; title?: string; description?: string };
+  };
   image?: { id?: string; mime_type?: string; caption?: string };
   audio?: { id?: string; mime_type?: string };
   video?: { id?: string; mime_type?: string; caption?: string };
@@ -217,6 +223,8 @@ export async function POST(request: Request) {
           continue;
         }
 
+        const inboundCreatedAt = now.toISOString();
+
         await Promise.all([
           supabase.from("messages").insert({
             organization_id: contact.organization_id,
@@ -229,12 +237,13 @@ export async function POST(request: Request) {
             media_url: getMediaId(message),
             status: "received",
             external_message_id: message.id,
-            payload: message
+            payload: message,
+            created_at: inboundCreatedAt
           }),
           supabase
             .from("conversations")
             .update({
-              last_message_at: now.toISOString(),
+              last_message_at: inboundCreatedAt,
               window_expires_at: new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString()
             })
             .eq("id", conversationId),
@@ -246,7 +255,9 @@ export async function POST(request: Request) {
             supabase,
             organizationId: contact.organization_id,
             contact,
-            conversationId
+            conversationId,
+            sourceMessageId: message.id ?? null,
+            sourceCreatedAt: inboundCreatedAt
           });
         }
 
@@ -280,6 +291,10 @@ function isValidMetaSignature(rawBody: string, signatureHeader: string | null) {
 }
 
 function normalizeMessageType(type: string | undefined) {
+  if (type === "button" || type === "interactive") {
+    return "text";
+  }
+
   if (type === "image" || type === "audio" || type === "video" || type === "document") {
     return type;
   }
@@ -290,6 +305,18 @@ function normalizeMessageType(type: string | undefined) {
 function getMessageContent(message: MetaMessage) {
   if (message.text?.body) {
     return message.text.body;
+  }
+
+  if (message.button?.text) {
+    return message.button.text;
+  }
+
+  if (message.interactive?.button_reply?.title) {
+    return message.interactive.button_reply.title;
+  }
+
+  if (message.interactive?.list_reply?.title) {
+    return message.interactive.list_reply.title;
   }
 
   return (
@@ -326,12 +353,16 @@ async function respondWithAgent({
   supabase,
   organizationId,
   contact,
-  conversationId
+  conversationId,
+  sourceMessageId,
+  sourceCreatedAt
 }: {
   supabase: ReturnType<typeof createAdminClient>;
   organizationId: string;
   contact: ContactLookup;
   conversationId: string;
+  sourceMessageId: string | null;
+  sourceCreatedAt: string;
 }) {
   const [{ data: campaign }, { data: messages }, { data: materials }] = await Promise.all([
     contact.campaign_id
@@ -471,6 +502,8 @@ async function respondWithAgent({
     contactId: contact.id,
     phone: contact.phone,
     text: reply,
+    sourceMessageId,
+    sourceCreatedAt,
     splitEnabled: agent?.message_split_enabled ?? true,
     wordsPerMinute: agent?.typing_words_per_minute ?? 150
   });

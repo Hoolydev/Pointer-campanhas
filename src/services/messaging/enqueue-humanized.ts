@@ -9,6 +9,8 @@ export async function enqueueHumanizedMetaMessages({
   contactId,
   phone,
   text,
+  sourceMessageId,
+  sourceCreatedAt,
   splitEnabled = true,
   wordsPerMinute = 150
 }: {
@@ -18,6 +20,8 @@ export async function enqueueHumanizedMetaMessages({
   contactId: string;
   phone: string;
   text: string;
+  sourceMessageId?: string | null;
+  sourceCreatedAt?: string | null;
   splitEnabled?: boolean;
   wordsPerMinute?: number;
 }) {
@@ -52,7 +56,9 @@ export async function enqueueHumanizedMetaMessages({
         text: part,
         humanized: true,
         partIndex: index + 1,
-        totalParts: parts.length
+        totalParts: parts.length,
+        sourceMessageId,
+        sourceCreatedAt
       }
     };
   });

@@ -324,6 +324,35 @@ async function processMetaSendMessage(
     }
   }
 
+  const sourceCreatedAt =
+    typeof job.payload.sourceCreatedAt === "string" ? job.payload.sourceCreatedAt : null;
+  const sourceMessageId =
+    typeof job.payload.sourceMessageId === "string" ? job.payload.sourceMessageId : null;
+
+  if (sourceCreatedAt) {
+    const newerInboundQuery = supabase
+      .from("messages")
+      .select("id")
+      .eq("conversation_id", conversationId)
+      .eq("direction", "inbound")
+      .gt("created_at", sourceCreatedAt)
+      .limit(1);
+
+    if (sourceMessageId) {
+      newerInboundQuery.neq("external_message_id", sourceMessageId);
+    }
+
+    const { data: newerInbound } = await newerInboundQuery.maybeSingle<{ id: string }>();
+
+    if (newerInbound) {
+      await supabase
+        .from("scheduled_jobs")
+        .update({ status: "cancelled", executed_at: new Date().toISOString() })
+        .eq("id", job.id);
+      return;
+    }
+  }
+
   const duplicateSince = new Date(Date.now() - 10 * 60 * 1000).toISOString();
   const { data: duplicateMessage } = await supabase
     .from("messages")
