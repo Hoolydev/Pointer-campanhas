@@ -141,6 +141,26 @@ export async function POST(request: Request) {
           continue;
         }
 
+        if (message.id) {
+          const { data: duplicateMessage } = await supabase
+            .from("messages")
+            .select("id")
+            .eq("external_message_id", message.id)
+            .limit(1)
+            .maybeSingle<{ id: string }>();
+
+          if (duplicateMessage) {
+            await supabase.from("webhook_logs").insert({
+              organization_id: null,
+              provider: "meta",
+              event_type: message.type ?? "message",
+              payload: message,
+              status: "ignored_duplicate_message"
+            });
+            continue;
+          }
+        }
+
         const phoneCandidates = getBrazilianPhoneCandidates(message.from);
         const { data: contact } = await supabase
           .from("contacts")

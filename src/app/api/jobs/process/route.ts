@@ -87,11 +87,22 @@ async function processJobs(request: Request) {
   const results = [];
 
   for (const job of jobs ?? []) {
-    await supabase
+    const { data: claimedJob, error: claimError } = await supabase
       .from("scheduled_jobs")
       .update({ status: "running" })
       .eq("id", job.id)
-      .eq("status", "pending");
+      .eq("status", "pending")
+      .select("id")
+      .maybeSingle<{ id: string }>();
+
+    if (claimError || !claimedJob) {
+      results.push({
+        id: job.id,
+        status: "skipped",
+        reason: claimError?.message ?? "already_claimed"
+      });
+      continue;
+    }
 
     try {
       if (job.job_type === "check_broker_response") {
