@@ -104,8 +104,12 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const rawBody = await request.text();
+  const n8nWebhookSecret = process.env.N8N_WEBHOOK_SECRET;
+  const trustedN8nRequest =
+    Boolean(n8nWebhookSecret) &&
+    request.headers.get("authorization") === `Bearer ${n8nWebhookSecret}`;
 
-  if (!isValidMetaSignature(rawBody, request.headers.get("x-hub-signature-256"))) {
+  if (!trustedN8nRequest && !isValidMetaSignature(rawBody, request.headers.get("x-hub-signature-256"))) {
     return NextResponse.json({ error: "Invalid Meta signature." }, { status: 401 });
   }
 
