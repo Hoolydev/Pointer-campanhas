@@ -57,6 +57,14 @@ export async function scheduleLeadFollowups({
 
   const base = new Date(scheduledAfter).getTime();
 
+  await supabase
+    .from("scheduled_jobs")
+    .update({ status: "cancelled" })
+    .eq("organization_id", organizationId)
+    .eq("target_id", conversationId)
+    .in("job_type", ["lead_followup", "lead_template_followup"])
+    .eq("status", "pending");
+
   const jobs = rules.map((rule) => ({
     organization_id: organizationId,
     job_type: "lead_followup",
@@ -88,13 +96,22 @@ export async function processLeadFollowup({
   organizationId: string;
   payload: FollowupJobPayload;
 }) {
-  const [{ data: inboundAfter }, { data: conversation }, { data: rule }] = await Promise.all([
+  const [{ data: inboundAfter }, { data: outboundAfter }, { data: conversation }, { data: rule }] = await Promise.all([
     supabase
       .from("messages")
       .select("id")
       .eq("organization_id", organizationId)
       .eq("conversation_id", payload.conversationId)
       .eq("direction", "inbound")
+      .gt("created_at", payload.scheduledAfter)
+      .limit(1)
+      .maybeSingle<{ id: string }>(),
+    supabase
+      .from("messages")
+      .select("id")
+      .eq("organization_id", organizationId)
+      .eq("conversation_id", payload.conversationId)
+      .eq("direction", "outbound")
       .gt("created_at", payload.scheduledAfter)
       .limit(1)
       .maybeSingle<{ id: string }>(),
@@ -114,6 +131,10 @@ export async function processLeadFollowup({
 
   if (inboundAfter) {
     return { status: "cancelled", reason: "lead_responded" };
+  }
+
+  if (outboundAfter) {
+    return { status: "cancelled", reason: "newer_outbound_exists" };
   }
 
   if (!conversation?.contacts || !rule) {
