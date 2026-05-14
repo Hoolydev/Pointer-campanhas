@@ -329,6 +329,18 @@ async function processMetaSendMessage(
   const sourceMessageId =
     typeof job.payload.sourceMessageId === "string" ? job.payload.sourceMessageId : null;
 
+  if (job.payload.humanized && !sourceCreatedAt) {
+    await supabase
+      .from("scheduled_jobs")
+      .update({
+        status: "cancelled",
+        executed_at: new Date().toISOString(),
+        payload: { ...job.payload, cancel_reason: "legacy_humanized_job_without_source" }
+      })
+      .eq("id", job.id);
+    return;
+  }
+
   if (sourceCreatedAt) {
     const newerInboundQuery = supabase
       .from("messages")
