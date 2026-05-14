@@ -27,6 +27,7 @@ export function SendCampaignButton({ campaignId }: { campaignId: string }) {
     const payload = (await response.json().catch(() => ({}))) as {
       queued?: number;
       pendingJobs?: number;
+      processor?: string;
       qstash?: {
         published?: boolean;
         reason?: string;
@@ -43,7 +44,9 @@ export function SendCampaignButton({ campaignId }: { campaignId: string }) {
 
     if ((payload.queued ?? 0) > 0) {
       const qstashMessage =
-        payload.qstash?.published === false
+        payload.processor === "n8n"
+          ? " O n8n assumiu o processamento."
+          : payload.qstash?.published === false
           ? ` QStash nao confirmou o processador: ${payload.qstash.reason ?? "sem detalhe"}.`
           : "";
       setMessage(`${payload.queued} contato(s) enfileirado(s).${qstashMessage}`);

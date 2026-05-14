@@ -108,6 +108,44 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     });
   }
 
+  const n8nDispatchWebhookUrl = process.env.N8N_CAMPAIGN_DISPATCH_WEBHOOK_URL;
+
+  if (n8nDispatchWebhookUrl) {
+    const response = await fetch(n8nDispatchWebhookUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        campaignId: campaign.id,
+        organizationId: profile.organization_id,
+        limit: parsed.data.limit,
+        intervalSeconds: parsed.data.intervalSeconds,
+        supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+        supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+        metaAccessToken: process.env.META_ACCESS_TOKEN,
+        metaPhoneNumberId: process.env.META_PHONE_NUMBER_ID
+      })
+    });
+
+    if (!response.ok) {
+      const payload = await response.text().catch(() => "");
+
+      return NextResponse.json(
+        {
+          error: `n8n nao aceitou o disparo: ${payload || response.statusText}`
+        },
+        { status: 502 }
+      );
+    }
+
+    return NextResponse.json({
+      queued: contacts.length,
+      pendingJobs: contacts.length,
+      processor: "n8n"
+    });
+  }
+
   const now = Date.now();
   const jobs = contacts.map((contact, index) => ({
     organization_id: profile.organization_id,
