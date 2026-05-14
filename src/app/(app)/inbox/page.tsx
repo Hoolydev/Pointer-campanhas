@@ -11,7 +11,6 @@ import {
   sendToBrokerAction,
   toggleAiAction
 } from "./actions";
-import { AgentTester } from "./agent-tester";
 
 type ConversationRow = {
   id: string;
@@ -36,12 +35,6 @@ type MessageRow = {
   media_url: string | null;
   status: string;
   created_at: string;
-};
-
-type AgentOption = {
-  id: string;
-  name: string;
-  agent_type: string;
 };
 
 export default async function InboxPage({
@@ -71,13 +64,6 @@ export default async function InboxPage({
     .order("last_message_at", { ascending: false, nullsFirst: false })
     .limit(50)
     .returns<ConversationRow[]>();
-  const { data: agents } = await supabase
-    .from("ai_agents")
-    .select("id, name, agent_type")
-    .eq("organization_id", profile.organization_id)
-    .eq("active", true)
-    .order("created_at", { ascending: false })
-    .returns<AgentOption[]>();
 
   const selected = conversations?.find((conversation) => conversation.id === selectedConversationId);
   const activeConversation = selected ?? conversations?.[0] ?? null;
@@ -95,9 +81,6 @@ export default async function InboxPage({
   return (
     <>
       <PageHeader title="Inbox" description="Conversas recebidas pelo WhatsApp e canais integrados." />
-      <div className="mb-6">
-        <AgentTester agents={agents ?? []} />
-      </div>
       <section className="grid min-h-[640px] gap-6 lg:grid-cols-[360px_1fr]">
         <aside className="overflow-hidden rounded-lg border bg-card shadow-sm">
           <div className="border-b px-4 py-3">
