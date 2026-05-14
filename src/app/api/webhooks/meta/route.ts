@@ -141,10 +141,11 @@ export async function POST(request: Request) {
           continue;
         }
 
+        const phoneCandidates = getBrazilianPhoneCandidates(message.from);
         const { data: contact } = await supabase
           .from("contacts")
           .select("id, organization_id, campaign_id, name, phone")
-          .eq("phone", message.from)
+          .in("phone", phoneCandidates)
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle<ContactLookup>();
@@ -282,6 +283,23 @@ function getMessageContent(message: MetaMessage) {
 
 function getMediaId(message: MetaMessage) {
   return message.image?.id || message.audio?.id || message.video?.id || message.document?.id || null;
+}
+
+function getBrazilianPhoneCandidates(phone: string) {
+  const digits = phone.replace(/\D/g, "");
+  const candidates = new Set([digits]);
+
+  if (digits.startsWith("55") && digits.length === 12) {
+    const ddd = digits.slice(2, 4);
+    const local = digits.slice(4);
+    candidates.add(`55${ddd}9${local}`);
+  }
+
+  if (digits.startsWith("55") && digits.length === 13 && digits[4] === "9") {
+    candidates.add(`55${digits.slice(2, 4)}${digits.slice(5)}`);
+  }
+
+  return Array.from(candidates);
 }
 
 async function respondWithAgent({
