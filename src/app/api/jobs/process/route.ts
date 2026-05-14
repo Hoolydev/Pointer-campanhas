@@ -552,7 +552,7 @@ async function processHauzappQualifiedLead(
 
   const { data: lead } = await supabase
     .from("leads")
-    .select("id, organization_id, name, phone, source, interest, region, budget, payment_method, summary, score")
+    .select("id, organization_id, name, phone, source, interest, region, budget, payment_method, summary, score, hauzapp_cliente_id, hauzapp_sent_at")
     .eq("id", job.target_id)
     .single<{
       id: string;
@@ -566,21 +566,64 @@ async function processHauzappQualifiedLead(
       payment_method: string | null;
       summary: string | null;
       score: number;
+      hauzapp_cliente_id: string | null;
+      hauzapp_sent_at: string | null;
     }>();
 
   if (!lead) {
     return;
   }
 
-  const result = await sendQualifiedLeadToHauzapp({
-    supabase,
-    lead
-  });
+  if (lead.hauzapp_cliente_id) {
+    await supabase
+      .from("scheduled_jobs")
+      .update({ status: "cancelled", executed_at: new Date().toISOString() })
+      .eq("id", job.id);
+    return;
+  }
+
+  const lockAt = new Date().toISOString();
+  const { data: lockedLead } = await supabase
+    .from("leads")
+    .update({ hauzapp_sent_at: lockAt })
+    .eq("id", lead.id)
+    .is("hauzapp_cliente_id", null)
+    .is("hauzapp_sent_at", null)
+    .select("id")
+    .maybeSingle<{ id: string }>();
+
+  if (!lockedLead && !lead.hauzapp_sent_at) {
+    await supabase
+      .from("scheduled_jobs")
+      .update({ status: "cancelled", executed_at: new Date().toISOString() })
+      .eq("id", job.id);
+    return;
+  }
+
+  let result: Awaited<ReturnType<typeof sendQualifiedLeadToHauzapp>>;
+
+  try {
+    result = await sendQualifiedLeadToHauzapp({
+      supabase,
+      lead: {
+        ...lead,
+        hauzapp_sent_at: lead.hauzapp_sent_at ?? lockAt
+      }
+    });
+  } catch (error) {
+    await supabase
+      .from("leads")
+      .update({ hauzapp_sent_at: null })
+      .eq("id", lead.id)
+      .is("hauzapp_cliente_id", null)
+      .eq("hauzapp_sent_at", lockAt);
+    throw error;
+  }
 
   await Promise.all([
     supabase.from("integration_logs").insert({
       organization_id: lead.organization_id,
-      provider: "houseup",
+      provider: "hauzapp",
       target_type: "hauzapp_lead",
       target_id: lead.id,
       status: "done",

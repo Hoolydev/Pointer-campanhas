@@ -93,21 +93,56 @@ export async function enqueueHauzappQualifiedLead({
   leadId: string;
   reason: string;
 }) {
+  const { data: lead } = await supabase
+    .from("leads")
+    .select("id, hauzapp_cliente_id, hauzapp_sent_at")
+    .eq("id", leadId)
+    .eq("organization_id", organizationId)
+    .maybeSingle<{ id: string; hauzapp_cliente_id: string | null; hauzapp_sent_at: string | null }>();
+
+  if (!lead || lead.hauzapp_cliente_id || lead.hauzapp_sent_at) {
+    return { queued: false, reason: "already_sent_or_missing_lead" };
+  }
+
+  const { data: existingJob } = await supabase
+    .from("scheduled_jobs")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("job_type", "hauzapp_create_qualified_lead")
+    .eq("target_id", leadId)
+    .in("status", ["pending", "running"])
+    .limit(1)
+    .maybeSingle<{ id: string }>();
+
+  if (existingJob) {
+    return { queued: false, reason: "active_job_exists", jobId: existingJob.id };
+  }
+
   const runAt = new Date().toISOString();
 
-  await supabase.from("scheduled_jobs").insert({
-    organization_id: organizationId,
-    job_type: "hauzapp_create_qualified_lead",
-    target_id: leadId,
-    status: "pending",
-    run_at: runAt,
-    payload: { reason }
-  });
+  const { data: job, error } = await supabase
+    .from("scheduled_jobs")
+    .insert({
+      organization_id: organizationId,
+      job_type: "hauzapp_create_qualified_lead",
+      target_id: leadId,
+      status: "pending",
+      run_at: runAt,
+      payload: { reason }
+    })
+    .select("id")
+    .single<{ id: string }>();
+
+  if (error || !job) {
+    return { queued: false, reason: error?.message ?? "job_insert_failed" };
+  }
 
   await publishJobProcessor({
     runAt,
     reason: "hauzapp_create_qualified_lead"
   }).catch(() => null);
+
+  return { queued: true, jobId: job.id };
 }
 
 export async function sendQualifiedLeadToBroker({
@@ -139,20 +174,12 @@ export async function sendQualifiedLeadToBroker({
   const { data: broker } = await brokerQuery.maybeSingle<Broker>();
 
   if (!broker) {
-    const runAt = new Date().toISOString();
-
-    await supabase.from("scheduled_jobs").insert({
-      organization_id: organizationId,
-      job_type: "hauzapp_create_qualified_lead",
-      target_id: leadId,
-      status: "pending",
-      run_at: runAt,
-      payload: { reason: "qualified_without_active_broker" }
-    });
-    await publishJobProcessor({
-      runAt,
+    await enqueueHauzappQualifiedLead({
+      supabase,
+      organizationId,
+      leadId,
       reason: "qualified_without_active_broker"
-    }).catch(() => null);
+    });
     await supabase
       .from("leads")
       .update({ stage: "qualified" })
@@ -247,34 +274,22 @@ Responda aqui com o status do atendimento.`,
   const brokerCheckRunAt = new Date(
     Date.now() + (brokerAgent?.broker_followup_minutes ?? 30) * 60 * 1000
   ).toISOString();
-  const hauzappRunAt = new Date().toISOString();
 
-  await Promise.all([
-    supabase.from("scheduled_jobs").insert({
-      organization_id: organizationId,
-      job_type: "check_broker_response",
-      target_id: assignment?.id ?? null,
-      status: "pending",
-      run_at: brokerCheckRunAt,
-      payload: { leadId, brokerId: broker.id }
-    }),
-    supabase.from("scheduled_jobs").insert({
-      organization_id: organizationId,
-      job_type: "hauzapp_create_qualified_lead",
-      target_id: leadId,
-      status: "pending",
-      run_at: hauzappRunAt,
-      payload: {
-        brokerName: broker.name,
-        brokerPhone: broker.phone
-      }
-    })
-  ]);
+  await supabase.from("scheduled_jobs").insert({
+    organization_id: organizationId,
+    job_type: "check_broker_response",
+    target_id: assignment?.id ?? null,
+    status: "pending",
+    run_at: brokerCheckRunAt,
+    payload: { leadId, brokerId: broker.id }
+  });
 
-  await publishJobProcessor({
-    runAt: hauzappRunAt,
+  await enqueueHauzappQualifiedLead({
+    supabase,
+    organizationId,
+    leadId,
     reason: "qualified_lead_to_broker"
-  }).catch(() => null);
+  });
 
   return assignment;
 }

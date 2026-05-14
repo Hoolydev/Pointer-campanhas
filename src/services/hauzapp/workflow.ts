@@ -21,6 +21,8 @@ type LeadForHauzapp = {
   payment_method: string | null;
   summary: string | null;
   score: number;
+  hauzapp_cliente_id?: string | null;
+  hauzapp_sent_at?: string | null;
 };
 
 type LocalBroker = {
@@ -39,16 +41,20 @@ export async function sendQualifiedLeadToHauzapp({
 }) {
   const stageId = Number(process.env.HAUZAPP_QUALIFIED_STAGE_ID || 2);
   const leadName = lead.name && lead.name.length >= 3 ? lead.name : `Lead ${lead.phone}`;
+  let negotiation =
+    lead.hauzapp_cliente_id ? { clienteID: lead.hauzapp_cliente_id } : await findNegotiationByPhone(lead.phone);
 
-  await addNegocio({
-    contatoNome: leadName,
-    contatoPhone: lead.phone,
-    negocioPrice: formatCurrencyForHauzapp(lead.budget),
-    negocioApelido: buildDealNickname(lead),
-    negocioTemperature: lead.score >= 80 ? 2 : lead.score >= 50 ? 1 : 0
-  });
+  if (!negotiation?.clienteID) {
+    await addNegocio({
+      contatoNome: leadName,
+      contatoPhone: lead.phone,
+      negocioPrice: formatCurrencyForHauzapp(lead.budget),
+      negocioApelido: buildDealNickname(lead),
+      negocioTemperature: lead.score >= 80 ? 2 : lead.score >= 50 ? 1 : 0
+    });
 
-  const negotiation = await findNegotiationByPhone(lead.phone);
+    negotiation = await findNegotiationByPhone(lead.phone);
+  }
 
   if (!negotiation?.clienteID) {
     throw new Error("HauzApp negotiation was created but clienteID was not found.");
