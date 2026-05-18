@@ -141,7 +141,8 @@ export async function qualifyManuallyAction(formData: FormData) {
       qualification_status: "qualified",
       score: 80,
       summary: "Lead qualificado manualmente pela Inbox.",
-      stage: "qualified"
+      stage: "qualified",
+      last_stage_updated_at: new Date().toISOString()
     }),
     supabase
       .from("conversations")

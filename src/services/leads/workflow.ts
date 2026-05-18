@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { LeadQualification } from "@/agents/lead-agent";
 import { renderTemplate } from "@/lib/templates";
+import { scheduleBrokerAssignmentSla } from "@/services/broker-sla/workflow";
 import { sendUazapiMessage } from "@/services/uazapi/send-message";
 import { publishJobProcessor } from "@/services/qstash/jobs";
 
@@ -47,7 +48,8 @@ export async function upsertLeadFromQualification({
     qualification_status: qualification.qualificationStatus,
     score: qualification.score,
     summary: qualification.summary,
-    stage: qualification.stage
+    stage: qualification.stage,
+    last_stage_updated_at: new Date().toISOString()
   };
 
   const { data: existing } = await supabase
@@ -201,7 +203,7 @@ export async function sendQualifiedLeadToBroker({
 
   await supabase
     .from("leads")
-    .update({ stage: "sent_to_broker" })
+    .update({ stage: "sent_to_broker", last_stage_updated_at: new Date().toISOString() })
     .eq("id", leadId)
     .eq("organization_id", organizationId);
 
@@ -283,6 +285,16 @@ Responda aqui com o status do atendimento.`,
     run_at: brokerCheckRunAt,
     payload: { leadId, brokerId: broker.id }
   });
+
+  if (assignment?.id) {
+    await scheduleBrokerAssignmentSla({
+      supabase,
+      organizationId,
+      assignmentId: assignment.id,
+      leadId,
+      brokerId: broker.id
+    });
+  }
 
   await enqueueHauzappQualifiedLead({
     supabase,

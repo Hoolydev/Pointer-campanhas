@@ -43,7 +43,7 @@ export async function updateLeadStageAction(formData: FormData) {
 
   await supabase
     .from("leads")
-    .update({ stage: parsed.data.stage })
+    .update({ stage: parsed.data.stage, last_stage_updated_at: new Date().toISOString() })
     .eq("id", parsed.data.lead_id)
     .eq("organization_id", profile.organization_id);
 

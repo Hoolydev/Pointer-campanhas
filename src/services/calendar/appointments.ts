@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { publishJobProcessor } from "@/services/qstash/jobs";
 
 type Availability = Record<string, Array<{ start: string; end: string }>>;
 
@@ -104,6 +105,30 @@ export async function createVisitAppointment({
   if (error || !appointment) {
     throw new Error(error?.message || "Nao foi possivel criar agendamento.");
   }
+
+  const reminderAt = new Date(starts.getTime() - 3 * 60 * 60_000);
+  const postVisitAt = new Date(ends.getTime() + 60 * 60_000);
+  const jobs = [
+    {
+      organization_id: organizationId,
+      job_type: "appointment_reminder",
+      target_id: appointment.id,
+      status: "pending",
+      run_at: (reminderAt.getTime() > Date.now() ? reminderAt : new Date(Date.now() + 60_000)).toISOString(),
+      payload: { leadId, conversationId, contactId }
+    },
+    {
+      organization_id: organizationId,
+      job_type: "appointment_post_visit_check",
+      target_id: appointment.id,
+      status: "pending",
+      run_at: postVisitAt.toISOString(),
+      payload: { leadId, conversationId, contactId }
+    }
+  ];
+
+  await supabase.from("scheduled_jobs").insert(jobs);
+  await publishJobProcessor({ runAt: jobs[0]?.run_at, reason: "appointment_jobs" }).catch(() => null);
 
   return appointment;
 }

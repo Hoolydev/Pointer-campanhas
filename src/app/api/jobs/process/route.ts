@@ -2,6 +2,17 @@ import { NextResponse } from "next/server";
 import { createHouseupLead } from "@/services/houseup/create-lead";
 import { sendQualifiedLeadToHauzapp } from "@/services/hauzapp/workflow";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  processAppointmentPostVisitCheck,
+  processAppointmentReminder,
+  processBrokerInitialCheck,
+  processBrokerInitialEscalation,
+  processBrokerNoResponseReclaim,
+  processBrokerProgressCheck,
+  processLeadFunnelStaleReclaim,
+  processLeadStaleReassignment,
+  processManualReminder
+} from "@/services/broker-sla/workflow";
 import { processLeadFollowup, scheduleLeadFollowups } from "@/services/followups/lead-followups";
 import { sendMetaMessage } from "@/services/meta/send-message";
 import { sendMetaTemplate } from "@/services/meta/send-template";
@@ -108,6 +119,60 @@ async function processJobs(request: Request) {
       if (job.job_type === "check_broker_response") {
         await processBrokerResponseCheck(supabase, job);
         results.push({ id: job.id, status: "done" });
+        continue;
+      }
+
+      if (job.job_type === "broker_initial_check") {
+        const result = await processBrokerInitialCheck(supabase, job);
+        results.push({ id: job.id, ...result });
+        continue;
+      }
+
+      if (job.job_type === "broker_initial_escalation") {
+        const result = await processBrokerInitialEscalation(supabase, job);
+        results.push({ id: job.id, ...result });
+        continue;
+      }
+
+      if (job.job_type === "broker_progress_check") {
+        const result = await processBrokerProgressCheck(supabase, job);
+        results.push({ id: job.id, ...result });
+        continue;
+      }
+
+      if (job.job_type === "broker_no_response_reclaim") {
+        const result = await processBrokerNoResponseReclaim(supabase, job);
+        results.push({ id: job.id, ...result });
+        continue;
+      }
+
+      if (job.job_type === "lead_stale_reassignment") {
+        const result = await processLeadStaleReassignment(supabase, job);
+        results.push({ id: job.id, ...result });
+        continue;
+      }
+
+      if (job.job_type === "lead_funnel_stale_reclaim") {
+        const result = await processLeadFunnelStaleReclaim(supabase, job);
+        results.push({ id: job.id, ...result });
+        continue;
+      }
+
+      if (job.job_type === "appointment_reminder") {
+        const result = await processAppointmentReminder(supabase, job);
+        results.push({ id: job.id, ...result });
+        continue;
+      }
+
+      if (job.job_type === "appointment_post_visit_check") {
+        const result = await processAppointmentPostVisitCheck(supabase, job);
+        results.push({ id: job.id, ...result });
+        continue;
+      }
+
+      if (job.job_type === "manual_reminder") {
+        const result = await processManualReminder(supabase, job);
+        results.push({ id: job.id, ...result });
         continue;
       }
 
