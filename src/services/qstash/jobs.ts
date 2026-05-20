@@ -31,12 +31,12 @@ function getProcessorUrl() {
 }
 
 export function isQstashConfigured() {
-  return Boolean(
-    process.env.QSTASH_TOKEN &&
-      process.env.QSTASH_CURRENT_SIGNING_KEY &&
-      process.env.QSTASH_NEXT_SIGNING_KEY &&
-      getProcessorUrl()
+  const hasSigningKeys = Boolean(
+    process.env.QSTASH_CURRENT_SIGNING_KEY && process.env.QSTASH_NEXT_SIGNING_KEY
   );
+  const hasProcessorSecret = Boolean(process.env.TRIGGER_SECRET_KEY || process.env.CRON_SECRET);
+
+  return Boolean(process.env.QSTASH_TOKEN && getProcessorUrl() && (hasSigningKeys || hasProcessorSecret));
 }
 
 export async function publishJobProcessor({
@@ -47,14 +47,19 @@ export async function publishJobProcessor({
     return { published: false, reason: "missing_qstash_token" };
   }
 
-  if (!process.env.QSTASH_CURRENT_SIGNING_KEY || !process.env.QSTASH_NEXT_SIGNING_KEY) {
-    return { published: false, reason: "missing_qstash_signing_keys" };
-  }
-
   const url = getProcessorUrl();
 
   if (!url) {
     return { published: false, reason: "missing_app_url" };
+  }
+
+  const secret = process.env.TRIGGER_SECRET_KEY || process.env.CRON_SECRET;
+  const hasSigningKeys = Boolean(
+    process.env.QSTASH_CURRENT_SIGNING_KEY && process.env.QSTASH_NEXT_SIGNING_KEY
+  );
+
+  if (!secret && !hasSigningKeys) {
+    return { published: false, reason: "missing_processor_auth" };
   }
 
   const date = runAt ? new Date(runAt) : new Date();
@@ -65,6 +70,7 @@ export async function publishJobProcessor({
 
   const message = await client.publishJSON({
     url,
+    headers: secret ? { Authorization: `Bearer ${secret}` } : undefined,
     body: { reason },
     notBefore,
     retries: 3,

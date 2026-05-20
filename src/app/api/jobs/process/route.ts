@@ -53,8 +53,12 @@ async function processJobs(request: Request) {
   const secret = process.env.TRIGGER_SECRET_KEY || process.env.CRON_SECRET;
   const authorization = request.headers.get("authorization");
   const hasQstashSignature = Boolean(request.headers.get("upstash-signature"));
+  const hasValidSecret = Boolean(secret && authorization === `Bearer ${secret}`);
 
-  if (hasQstashSignature) {
+  if (hasValidSecret) {
+    // Authorized by the app-level processor secret. This is also used for QStash
+    // messages so production does not depend exclusively on signing-key setup.
+  } else if (hasQstashSignature) {
     try {
       const verified = await verifyQstashRequest(request, body);
 
@@ -64,7 +68,7 @@ async function processJobs(request: Request) {
     } catch {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-  } else if (secret && authorization !== `Bearer ${secret}`) {
+  } else if (secret) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   } else if (!secret && (process.env.QSTASH_TOKEN || process.env.QSTASH_CURRENT_SIGNING_KEY)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
