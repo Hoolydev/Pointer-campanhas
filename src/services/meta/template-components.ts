@@ -27,31 +27,35 @@ export function buildTemplateComponents({
 }
 
 export function buildBodyTemplateComponents(params: unknown, contact: TemplateContact) {
-  const values = Array.isArray(params)
+  const parameters = Array.isArray(params)
     ? params
         .map((param) => (typeof param === "string" ? param.trim() : ""))
         .filter(Boolean)
-        .map((param) =>
-          renderTemplate(param, {
+        .map((param) => {
+          const text = renderTemplate(param, {
             nome: contact.name,
             name: contact.name,
             telefone: contact.phone,
             phone: contact.phone
-          })
-        )
+          });
+          const namedParam = param.match(/^{{\s*([a-zA-Z0-9_]+)\s*}}$/);
+
+          return {
+            type: "text",
+            ...(namedParam ? { parameter_name: namedParam[1] } : {}),
+            text
+          };
+        })
     : [];
 
-  if (values.length === 0) {
+  if (parameters.length === 0) {
     return [];
   }
 
   return [
     {
       type: "body",
-      parameters: values.map((text) => ({
-        type: "text",
-        text
-      }))
+      parameters
     }
   ];
 }

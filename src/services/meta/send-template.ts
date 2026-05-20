@@ -45,11 +45,15 @@ export async function sendMetaTemplate({
 
   const payload = (await response.json().catch(() => ({}))) as {
     messages?: Array<{ id?: string }>;
-    error?: { message?: string };
+    error?: { message?: string; error_data?: { details?: string }; code?: number };
   };
 
   if (!response.ok) {
-    throw new Error(payload.error?.message || "Meta template request failed.");
+    const details = payload.error?.error_data?.details;
+    const code = payload.error?.code ? `#${payload.error.code}` : null;
+    const parts = [code, payload.error?.message, details].filter(Boolean);
+
+    throw new Error(parts.length > 0 ? parts.join(" - ") : "Meta template request failed.");
   }
 
   return {
