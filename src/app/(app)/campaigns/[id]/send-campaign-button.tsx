@@ -20,7 +20,9 @@ export function SendCampaignButton({ campaignId }: { campaignId: string }) {
       },
       body: JSON.stringify({
         intervalSeconds: 30,
-        limit: 100
+        limit: 10000,
+        enqueueAll: true,
+        processor: "qstash"
       })
     });
 
@@ -48,7 +50,7 @@ export function SendCampaignButton({ campaignId }: { campaignId: string }) {
           ? " O n8n assumiu o processamento."
           : payload.qstash?.published === false
           ? ` QStash nao confirmou o processador: ${payload.qstash.reason ?? "sem detalhe"}.`
-          : "";
+          : " QStash assumiu o processamento.";
       setMessage(`${payload.queued} contato(s) enfileirado(s).${qstashMessage}`);
       router.refresh();
       return;

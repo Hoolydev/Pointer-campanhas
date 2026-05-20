@@ -8,7 +8,9 @@ import { publishJobProcessor } from "@/services/qstash/jobs";
 
 const sendSchema = z.object({
   intervalSeconds: z.number().int().min(10).max(3600).default(30),
-  limit: z.number().int().min(1).max(500).default(100)
+  limit: z.number().int().min(1).max(10000).default(10000),
+  enqueueAll: z.boolean().default(true),
+  processor: z.enum(["qstash", "n8n"]).default("qstash")
 });
 
 type ContactRow = {
@@ -67,13 +69,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     );
   }
 
+  const contactLimit = parsed.data.enqueueAll ? parsed.data.limit : Math.min(parsed.data.limit, 500);
   const { data: contacts, error: contactsError } = await supabase
     .from("contacts")
     .select("id, name, phone")
     .eq("campaign_id", id)
     .eq("organization_id", profile.organization_id)
     .in("status", ["pending", "failed"])
-    .limit(parsed.data.limit)
+    .order("created_at", { ascending: true })
+    .limit(contactLimit)
     .returns<ContactRow[]>();
 
   if (contactsError) {
@@ -110,7 +114,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   const n8nDispatchWebhookUrl = process.env.N8N_CAMPAIGN_DISPATCH_WEBHOOK_URL;
 
-  if (n8nDispatchWebhookUrl) {
+  if (parsed.data.processor === "n8n" && n8nDispatchWebhookUrl) {
     const response = await fetch(n8nDispatchWebhookUrl, {
       method: "POST",
       headers: {
@@ -177,19 +181,23 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
   }));
 
-  const { error: jobsError } = await supabase.from("scheduled_jobs").insert(jobs);
+  for (const chunk of chunkArray(jobs, 500)) {
+    const { error: jobsError } = await supabase.from("scheduled_jobs").insert(chunk);
 
-  if (jobsError) {
-    return NextResponse.json({ error: jobsError.message }, { status: 500 });
+    if (jobsError) {
+      return NextResponse.json({ error: jobsError.message }, { status: 500 });
+    }
   }
 
-  await supabase
-    .from("contacts")
-    .update({ status: "queued" })
-    .in(
-      "id",
-      contacts.map((contact) => contact.id)
-    );
+  for (const chunk of chunkArray(contacts, 500)) {
+    await supabase
+      .from("contacts")
+      .update({ status: "queued" })
+      .in(
+        "id",
+        chunk.map((contact) => contact.id)
+      );
+  }
 
   const qstash = await publishJobProcessor({
     runAt: jobs[0]?.run_at,
@@ -202,6 +210,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   return NextResponse.json({
     queued: jobs.length,
     pendingJobs: jobs.length,
-    qstash
+    qstash,
+    processor: "qstash"
   });
+}
+
+function chunkArray<T>(items: T[], size: number) {
+  const chunks: T[][] = [];
+
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+
+  return chunks;
 }
