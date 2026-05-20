@@ -74,8 +74,15 @@ export function SendCampaignButton({ campaignId }: { campaignId: string }) {
     }
 
     if ((payload.pendingJobs ?? 0) > 0) {
+      const kickstartMessage = payload.kickstart?.ok
+        ? " Primeiro lote iniciado."
+        : payload.kickstart?.attempted
+        ? ` O primeiro lote nao iniciou automaticamente: ${
+            payload.kickstart.error ?? `status ${payload.kickstart.status ?? "desconhecido"}`
+          }.`
+        : ` Processador imediato nao acionado: ${payload.kickstart?.reason ?? "sem detalhe"}.`;
       setMessage(
-        `${payload.pendingJobs} disparo(s) ja estavam na fila. Reativei o processador QStash.`
+        `${payload.pendingJobs} disparo(s) ja estavam na fila. Reativei o processador QStash.${kickstartMessage}`
       );
       router.refresh();
       return;

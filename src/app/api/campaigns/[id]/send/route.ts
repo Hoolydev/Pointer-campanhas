@@ -107,6 +107,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       .contains("payload", { campaignId: campaign.id });
 
     let qstash: QstashPublishResult = { published: false, reason: "no_pending_contacts" };
+    let kickstart: ProcessorKickstartResult = {
+      attempted: false,
+      reason: "no_pending_contacts"
+    };
 
     if ((pendingJobs ?? 0) > 0) {
       qstash = await publishJobProcessor({
@@ -116,12 +120,20 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         published: false,
         reason: error instanceof Error ? error.message : "qstash_publish_failed"
       }));
+      kickstart = await kickstartJobProcessor(request).catch((error) => ({
+        attempted: true,
+        ok: false,
+        status: 0,
+        error: error instanceof Error ? error.message : "processor_kickstart_failed"
+      }));
     }
 
     return NextResponse.json({
       queued: 0,
       pendingJobs: pendingJobs ?? 0,
-      qstash
+      qstash,
+      kickstart,
+      processor: "qstash"
     });
   }
 
