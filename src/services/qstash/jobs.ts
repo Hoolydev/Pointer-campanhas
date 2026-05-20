@@ -31,7 +31,12 @@ function getProcessorUrl() {
 }
 
 export function isQstashConfigured() {
-  return Boolean(process.env.QSTASH_TOKEN && getProcessorUrl());
+  return Boolean(
+    process.env.QSTASH_TOKEN &&
+      process.env.QSTASH_CURRENT_SIGNING_KEY &&
+      process.env.QSTASH_NEXT_SIGNING_KEY &&
+      getProcessorUrl()
+  );
 }
 
 export async function publishJobProcessor({
@@ -40,6 +45,10 @@ export async function publishJobProcessor({
 }: PublishJobProcessorInput = {}) {
   if (!process.env.QSTASH_TOKEN) {
     return { published: false, reason: "missing_qstash_token" };
+  }
+
+  if (!process.env.QSTASH_CURRENT_SIGNING_KEY || !process.env.QSTASH_NEXT_SIGNING_KEY) {
+    return { published: false, reason: "missing_qstash_signing_keys" };
   }
 
   const url = getProcessorUrl();

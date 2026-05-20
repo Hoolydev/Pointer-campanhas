@@ -35,6 +35,19 @@ type QstashPublishResult =
   | Awaited<ReturnType<typeof publishJobProcessor>>
   | { published: false; reason: string };
 
+type ProcessorKickstartResult =
+  | {
+      attempted: true;
+      ok: boolean;
+      status: number;
+      payload?: unknown;
+      error?: string;
+    }
+  | {
+      attempted: false;
+      reason: string;
+    };
+
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const body = await request.json().catch(() => ({}));
   const parsed = sendSchema.safeParse(body);
@@ -206,11 +219,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     published: false,
     reason: error instanceof Error ? error.message : "qstash_publish_failed"
   }));
+  const kickstart = await kickstartJobProcessor(request).catch((error) => ({
+    attempted: true as const,
+    ok: false,
+    status: 0,
+    error: error instanceof Error ? error.message : "processor_kickstart_failed"
+  }));
 
   return NextResponse.json({
     queued: jobs.length,
     pendingJobs: jobs.length,
     qstash,
+    kickstart,
     processor: "qstash"
   });
 }
@@ -223,4 +243,30 @@ function chunkArray<T>(items: T[], size: number) {
   }
 
   return chunks;
+}
+
+async function kickstartJobProcessor(request: Request): Promise<ProcessorKickstartResult> {
+  const secret = process.env.TRIGGER_SECRET_KEY || process.env.CRON_SECRET;
+
+  if (!secret) {
+    return { attempted: false, reason: "missing_trigger_secret" };
+  }
+
+  const response = await fetch(new URL("/api/jobs/process", request.url), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${secret}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ reason: "campaign_send_kickstart" }),
+    cache: "no-store"
+  });
+  const payload = (await response.json().catch(() => null)) as unknown;
+
+  return {
+    attempted: true,
+    ok: response.ok,
+    status: response.status,
+    payload
+  };
 }

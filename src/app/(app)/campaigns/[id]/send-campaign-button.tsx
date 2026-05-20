@@ -34,6 +34,13 @@ export function SendCampaignButton({ campaignId }: { campaignId: string }) {
         published?: boolean;
         reason?: string;
       };
+      kickstart?: {
+        attempted?: boolean;
+        ok?: boolean;
+        status?: number;
+        reason?: string;
+        error?: string;
+      };
       error?: string;
     };
 
@@ -51,7 +58,17 @@ export function SendCampaignButton({ campaignId }: { campaignId: string }) {
           : payload.qstash?.published === false
           ? ` QStash nao confirmou o processador: ${payload.qstash.reason ?? "sem detalhe"}.`
           : " QStash assumiu o processamento.";
-      setMessage(`${payload.queued} contato(s) enfileirado(s).${qstashMessage}`);
+      const kickstartMessage =
+        payload.processor === "n8n"
+          ? ""
+          : payload.kickstart?.ok
+          ? " Primeiro lote iniciado."
+          : payload.kickstart?.attempted
+          ? ` O primeiro lote nao iniciou automaticamente: ${
+              payload.kickstart.error ?? `status ${payload.kickstart.status ?? "desconhecido"}`
+            }.`
+          : ` Processador imediato nao acionado: ${payload.kickstart?.reason ?? "sem detalhe"}.`;
+      setMessage(`${payload.queued} contato(s) enfileirado(s).${qstashMessage}${kickstartMessage}`);
       router.refresh();
       return;
     }
