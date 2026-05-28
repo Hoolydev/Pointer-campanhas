@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createHouseupLead } from "@/services/houseup/create-lead";
+import { syncHauzappProspectionLeads } from "@/services/hauzapp/prospection-sync";
 import { sendQualifiedLeadToHauzapp } from "@/services/hauzapp/workflow";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
@@ -189,6 +190,23 @@ async function processJobs(request: Request) {
       if (job.job_type === "hauzapp_create_qualified_lead") {
         await processHauzappQualifiedLead(supabase, job);
         results.push({ id: job.id, status: "done" });
+        continue;
+      }
+
+      if (job.job_type === "hauzapp_sync_prospection") {
+        const result = await syncHauzappProspectionLeads({
+          supabase,
+          organizationId: job.organization_id
+        });
+        await supabase
+          .from("scheduled_jobs")
+          .update({
+            status: "done",
+            executed_at: new Date().toISOString(),
+            payload: { ...job.payload, result }
+          })
+          .eq("id", job.id);
+        results.push({ id: job.id, status: "done", result });
         continue;
       }
 

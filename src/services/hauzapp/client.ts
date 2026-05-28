@@ -20,6 +20,7 @@ export type HauzappNegotiation = {
   clienteTelefone: string;
   clienteFunilStageID?: string;
   clienteFunilStage?: string;
+  clienteTemperature?: string;
   corretorID?: string;
   corretorName?: string;
 };
@@ -33,9 +34,19 @@ export type AddNegocioInput = {
   negocioTemperature?: 0 | 1 | 2;
 };
 
-export async function hauzappRequest<T>(method: string, body: Record<string, unknown> = {}) {
-  const baseUrl = process.env.HAUZAPP_BASE_URL || DEFAULT_BASE_URL;
-  const chave = process.env.HAUZAPP_API_KEY;
+export type HauzappIntegrationConfig = {
+  baseUrl?: string | null;
+  apiKey?: string | null;
+  chave?: string | null;
+};
+
+export async function hauzappRequest<T>(
+  method: string,
+  body: Record<string, unknown> = {},
+  integrationConfig?: HauzappIntegrationConfig
+) {
+  const baseUrl = integrationConfig?.baseUrl || process.env.HAUZAPP_BASE_URL || DEFAULT_BASE_URL;
+  const chave = integrationConfig?.apiKey || integrationConfig?.chave || process.env.HAUZAPP_API_KEY;
 
   if (!chave) {
     throw new Error("HAUZAPP_API_KEY is missing.");
@@ -61,7 +72,7 @@ export async function hauzappRequest<T>(method: string, body: Record<string, unk
   return payload;
 }
 
-export async function addNegocio(input: AddNegocioInput) {
+export async function addNegocio(input: AddNegocioInput, integrationConfig?: HauzappIntegrationConfig) {
   return hauzappRequest("addNegocio", {
     contatoNome: input.contatoNome,
     contatoPhone: formatPhoneForHauzapp(input.contatoPhone),
@@ -69,35 +80,45 @@ export async function addNegocio(input: AddNegocioInput) {
     negocioPrice: input.negocioPrice || undefined,
     negocioApelido: input.negocioApelido || undefined,
     negocioTemperature: input.negocioTemperature ?? 2
-  });
+  }, integrationConfig);
 }
 
-export async function getAllNegociacoes(search?: string) {
+export async function getAllNegociacoes(search?: string, integrationConfig?: HauzappIntegrationConfig) {
   const response = await hauzappRequest<HauzappNegotiation[]>("getAllNegociacoes", {
     search: search || undefined
-  });
+  }, integrationConfig);
   const details = parseDetails<HauzappNegotiation[]>(response.details);
 
   return Array.isArray(details) ? details : [];
 }
 
-export async function changeNegociacaoEtapa(clienteID: string | number, funilStageID: number) {
+export async function changeNegociacaoEtapa(
+  clienteID: string | number,
+  funilStageID: number,
+  integrationConfig?: HauzappIntegrationConfig
+) {
   return hauzappRequest("changeNegociacaoEtapa", {
     clienteID: Number(clienteID),
     funilStageID
-  });
+  }, integrationConfig);
 }
 
-export async function imobEncaminharNegocio(clienteID: string | number, corretorID: string | number) {
+export async function imobEncaminharNegocio(
+  clienteID: string | number,
+  corretorID: string | number,
+  integrationConfig?: HauzappIntegrationConfig
+) {
   return hauzappRequest("imobEncaminharNegocio", {
     clienteID: Number(clienteID),
     corretorID: Number(corretorID)
-  });
+  }, integrationConfig);
 }
 
-export async function getFunilStages() {
+export async function getFunilStages(integrationConfig?: HauzappIntegrationConfig) {
   const response = await hauzappRequest<Array<{ id: number; name?: string; nome?: string }>>(
-    "getFunilStages"
+    "getFunilStages",
+    {},
+    integrationConfig
   );
   const details = parseDetails<Array<{ id: number; name?: string; nome?: string }>>(
     response.details
@@ -105,16 +126,16 @@ export async function getFunilStages() {
   return Array.isArray(details) ? details : [];
 }
 
-export async function getAllCorretoresImob() {
-  const response = await hauzappRequest<HauzappBroker[]>("getAllCorretoresImob");
+export async function getAllCorretoresImob(integrationConfig?: HauzappIntegrationConfig) {
+  const response = await hauzappRequest<HauzappBroker[]>("getAllCorretoresImob", {}, integrationConfig);
   const details = parseDetails<HauzappBroker[]>(response.details);
   return Array.isArray(details) ? details : [];
 }
 
-export async function findNegotiationByPhone(phone: string) {
+export async function findNegotiationByPhone(phone: string, integrationConfig?: HauzappIntegrationConfig) {
   const normalized = phone.replace(/\D/g, "");
   const lastDigits = normalized.slice(-8);
-  const negotiations = await getAllNegociacoes(lastDigits);
+  const negotiations = await getAllNegociacoes(lastDigits, integrationConfig);
 
   return (
     negotiations.find((negotiation) => {

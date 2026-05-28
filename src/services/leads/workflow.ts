@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { LeadQualification } from "@/agents/lead-agent";
 import { renderTemplate } from "@/lib/templates";
 import { scheduleBrokerAssignmentSla } from "@/services/broker-sla/workflow";
+import { configString, getActiveIntegrationConfig } from "@/services/integrations/config";
 import { sendUazapiMessage } from "@/services/uazapi/send-message";
 import { publishJobProcessor } from "@/services/qstash/jobs";
 
@@ -12,6 +13,7 @@ type WorkflowInput = {
   campaignId: string | null;
   conversationId: string;
   qualification: LeadQualification;
+  source?: "campaign" | "canal_pro" | "manual" | "hauzapp";
 };
 
 type Broker = {
@@ -31,7 +33,8 @@ export async function upsertLeadFromQualification({
   contactId,
   campaignId,
   conversationId,
-  qualification
+  qualification,
+  source = "campaign"
 }: WorkflowInput) {
   const leadPayload = {
     organization_id: organizationId,
@@ -40,7 +43,7 @@ export async function upsertLeadFromQualification({
     conversation_id: conversationId,
     name: qualification.name,
     phone: qualification.phone,
-    source: "campaign",
+    source,
     interest: qualification.interest,
     region: qualification.region,
     budget: qualification.budget,
@@ -246,9 +249,14 @@ Responda aqui com o status do atendimento.`,
   );
 
   try {
+    const uazapiConfig = await getActiveIntegrationConfig(supabase, organizationId, "uazapi");
     const payload = await sendUazapiMessage({
       phone: broker.phone,
-      text: message
+      text: message,
+      integrationConfig: {
+        baseUrl: configString(uazapiConfig, ["baseUrl", "base_url"], process.env.UAZAPI_BASE_URL) ?? undefined,
+        token: configString(uazapiConfig, ["token", "apiKey", "api_key"], process.env.UAZAPI_TOKEN) ?? undefined
+      }
     });
 
     await supabase.from("messages").insert({

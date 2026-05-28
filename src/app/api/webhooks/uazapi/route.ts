@@ -2,12 +2,16 @@ import { NextResponse } from "next/server";
 import { normalizeBrazilianPhone } from "@/lib/phone";
 import { scheduleBrokerProgressChecks } from "@/services/broker-sla/workflow";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { processUazapiLeadMessage } from "@/services/uazapi/lead-workflow";
 
 type UazapiPayload = {
   phone?: string;
   from?: string;
   text?: string;
   message?: string;
+  clienteID?: string;
+  clienteId?: string;
+  hauzapp_cliente_id?: string;
 };
 
 export async function POST(request: Request) {
@@ -36,15 +40,21 @@ export async function POST(request: Request) {
       .maybeSingle<{ id: string; organization_id: string }>();
 
     if (adminProfile) {
+      const adminResult = await processAdminMessage({
+        supabase,
+        organizationId: adminProfile.organization_id,
+        text,
+        payload
+      });
       await supabase.from("webhook_logs").insert({
         organization_id: adminProfile.organization_id,
         provider: "uazapi",
         event_type: "admin_message",
         payload,
-        status: "processed_admin"
+        status: adminResult.updated ? "processed_admin_update" : "processed_admin"
       });
 
-      return NextResponse.json({ processed: true, role: "admin" });
+      return NextResponse.json({ processed: true, role: "admin", ...adminResult });
     }
   }
 
@@ -57,7 +67,22 @@ export async function POST(request: Request) {
   });
 
   if (!broker) {
-    return NextResponse.json({ processed: false });
+    const organizationId = await resolveLeadOrganization(supabase, phone);
+
+    if (!organizationId) {
+      return NextResponse.json({ processed: false, reason: "organization_not_found" });
+    }
+
+    const result = await processUazapiLeadMessage({
+      supabase,
+      organizationId,
+      phone,
+      text,
+      payload,
+      hauzappClienteId: getHauzappClienteId(payload)
+    });
+
+    return NextResponse.json(result);
   }
 
   const { data: assignment } = await supabase
@@ -109,4 +134,121 @@ export async function POST(request: Request) {
   });
 
   return NextResponse.json({ processed: true });
+}
+
+async function resolveLeadOrganization(
+  supabase: ReturnType<typeof createAdminClient>,
+  phone: string
+) {
+  const { data: contact } = await supabase
+    .from("contacts")
+    .select("organization_id")
+    .eq("phone", phone)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ organization_id: string }>();
+
+  if (contact?.organization_id) {
+    return contact.organization_id;
+  }
+
+  const { data: lead } = await supabase
+    .from("leads")
+    .select("organization_id")
+    .eq("phone", phone)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ organization_id: string }>();
+
+  if (lead?.organization_id) {
+    return lead.organization_id;
+  }
+
+  const { data: integration } = await supabase
+    .from("integrations")
+    .select("organization_id")
+    .eq("provider", "uazapi")
+    .eq("active", true)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ organization_id: string }>();
+
+  return integration?.organization_id ?? null;
+}
+
+function getHauzappClienteId(payload: UazapiPayload) {
+  return payload.hauzapp_cliente_id || payload.clienteID || payload.clienteId || null;
+}
+
+async function processAdminMessage({
+  supabase,
+  organizationId,
+  text,
+  payload
+}: {
+  supabase: ReturnType<typeof createAdminClient>;
+  organizationId: string;
+  text: string;
+  payload: unknown;
+}) {
+  const stage = inferAdminStage(text);
+
+  if (!stage) {
+    return { updated: false, reason: "no_stage_command" };
+  }
+
+  const { data: assignment } = await supabase
+    .from("broker_assignments")
+    .select("id, lead_id")
+    .eq("organization_id", organizationId)
+    .in("status", ["assigned", "accepted", "no_response"])
+    .order("assigned_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ id: string; lead_id: string }>();
+
+  if (!assignment) {
+    return { updated: false, reason: "no_assignment_to_update" };
+  }
+
+  const now = new Date().toISOString();
+  await Promise.all([
+    supabase
+      .from("leads")
+      .update({
+        stage,
+        last_stage_updated_at: now,
+        last_broker_response_at: now,
+        summary: `Atualizacao da Cris/Admin via WhatsApp: ${text}`
+      })
+      .eq("id", assignment.lead_id),
+    supabase.from("integration_logs").insert({
+      organization_id: organizationId,
+      provider: "uazapi",
+      target_type: "admin_lead_update",
+      target_id: assignment.lead_id,
+      status: "done",
+      request_payload: { text, payload },
+      response_payload: { stage },
+      error_message: null
+    })
+  ]);
+
+  return { updated: true, leadId: assignment.lead_id, stage };
+}
+
+function inferAdminStage(text: string) {
+  const normalized = text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+
+  if (normalized.includes("ganhou") || normalized.includes("fechou")) return "won";
+  if (normalized.includes("perdeu") || normalized.includes("sem interesse")) return "lost";
+  if (normalized.includes("proposta")) return "proposal";
+  if (normalized.includes("visita")) return "visit";
+  if (normalized.includes("cliente quente") || normalized.includes("quente")) return "cliente_quente";
+  if (normalized.includes("reaquecer")) return "reaquecer";
+  if (normalized.includes("atendimento")) return "broker_attending";
+
+  return null;
 }

@@ -2,7 +2,7 @@ import { Badge } from "@/components/badge";
 import { PageHeader } from "@/components/page-header";
 import { getCurrentProfile } from "@/lib/auth/organization";
 import { createClient } from "@/lib/supabase/server";
-import { saveIntegrationAction } from "./actions";
+import { enqueueHauzappProspectionSyncAction, saveIntegrationAction } from "./actions";
 
 type IntegrationRow = {
   id: string;
@@ -50,7 +50,13 @@ export default async function IntegrationsPage() {
             <textarea
               name="config"
               rows={6}
-              defaultValue="{}"
+              defaultValue={`{
+  "apiKey": "",
+  "prospectionStageId": 1,
+  "qualifiedStageId": 3,
+  "leadAgentId": "",
+  "autoGreetProspects": false
+}`}
               className="w-full rounded-md border bg-white px-3 py-2 font-mono text-xs"
             />
           </label>
@@ -59,7 +65,21 @@ export default async function IntegrationsPage() {
           </button>
         </form>
 
-        <section className="overflow-hidden rounded-lg border bg-card shadow-sm">
+        <section className="space-y-4">
+          <form action={enqueueHauzappProspectionSyncAction} className="rounded-lg border bg-card p-4 shadow-sm">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-950">Sincronizacao HauzApp</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Busca negocios na etapa Prospecção e cria leads para atendimento via Uazapi.
+                </p>
+              </div>
+              <button className="h-10 rounded-md border px-4 text-sm font-semibold">
+                Sincronizar Prospecção
+              </button>
+            </div>
+          </form>
+          <div className="overflow-hidden rounded-lg border bg-card shadow-sm">
           <table className="w-full text-left text-sm">
             <thead className="bg-muted text-xs uppercase text-muted-foreground">
               <tr>
@@ -82,6 +102,7 @@ export default async function IntegrationsPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </section>
       </section>
     </>

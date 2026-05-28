@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { renderTemplate } from "@/lib/templates";
+import { configString, getActiveIntegrationConfig } from "@/services/integrations/config";
 import { sendMetaMessage } from "@/services/meta/send-message";
 import { publishJobProcessor } from "@/services/qstash/jobs";
 import { sendUazapiMessage } from "@/services/uazapi/send-message";
@@ -121,7 +122,7 @@ export async function processBrokerInitialCheck(supabase: SupabaseClient, job: J
     return markDone(supabase, job.id, "cancelled", "broker_already_responded");
   }
 
-  await notifyBroker(context, `Ola, {{broker_name}}. Voce conseguiu iniciar o atendimento do lead {{lead_name}}?\n\nResumo: {{summary}}\n\nMe responda aqui como foi o primeiro contato.`);
+  await notifyBroker(supabase, context, `Ola, {{broker_name}}. Voce conseguiu iniciar o atendimento do lead {{lead_name}}?\n\nResumo: {{summary}}\n\nMe responda aqui como foi o primeiro contato.`);
   await supabase.from("broker_assignments").update({ first_check_sent_at: new Date().toISOString() }).eq("id", context.id);
   return markDone(supabase, job.id, "done", "broker_checked");
 }
@@ -150,7 +151,7 @@ export async function processBrokerProgressCheck(supabase: SupabaseClient, job: 
     return markDone(supabase, job.id, "cancelled", "assignment_not_accepted");
   }
 
-  await notifyBroker(context, `Ola, {{broker_name}}. Como esta o atendimento do lead {{lead_name}}?\n\nTeve visita, proposta ou alguma atualizacao de funil? Me responda aqui para eu atualizar o sistema.`);
+  await notifyBroker(supabase, context, `Ola, {{broker_name}}. Como esta o atendimento do lead {{lead_name}}?\n\nTeve visita, proposta ou alguma atualizacao de funil? Me responda aqui para eu atualizar o sistema.`);
   await supabase.from("broker_assignments").update({ last_progress_check_at: new Date().toISOString() }).eq("id", context.id);
 
   if (job.payload.recurring) {
@@ -265,9 +266,14 @@ export async function processAppointmentPostVisitCheck(supabase: SupabaseClient,
     .maybeSingle<{ id: string; brokers: { name: string; phone: string } | null; leads: { name: string | null; phone: string; summary: string | null } | null }>();
 
   if (assignment?.brokers?.phone) {
+    const config = await getActiveIntegrationConfig(supabase, appointment.organization_id, "uazapi");
     await sendUazapiMessage({
       phone: assignment.brokers.phone,
-      text: `Ola, ${assignment.brokers.name}. Como foi a visita do lead ${assignment.leads?.name ?? assignment.leads?.phone ?? ""}? Teve proposta ou proximo passo?`
+      text: `Ola, ${assignment.brokers.name}. Como foi a visita do lead ${assignment.leads?.name ?? assignment.leads?.phone ?? ""}? Teve proposta ou proximo passo?`,
+      integrationConfig: {
+        baseUrl: configString(config, ["baseUrl", "base_url"], process.env.UAZAPI_BASE_URL) ?? undefined,
+        token: configString(config, ["token", "apiKey", "api_key"], process.env.UAZAPI_TOKEN) ?? undefined
+      }
     });
   }
   await supabase.from("appointments").update({ broker_post_visit_checked_at: new Date().toISOString() }).eq("id", job.target_id);
@@ -329,8 +335,13 @@ async function getAssignmentContextByLead(supabase: SupabaseClient, job: JobLike
   return data ?? null;
 }
 
-async function notifyBroker(context: AssignmentContext, template: string) {
+async function notifyBroker(supabase: SupabaseClient, context: AssignmentContext, template: string) {
   if (!context.brokers?.phone) return;
+  const config = await getActiveIntegrationConfig(
+    supabase,
+    context.organization_id,
+    "uazapi"
+  );
   await sendUazapiMessage({
     phone: context.brokers.phone,
     text: renderTemplate(template, {
@@ -338,7 +349,11 @@ async function notifyBroker(context: AssignmentContext, template: string) {
       lead_name: leadName(context),
       lead_phone: context.leads?.phone,
       summary: context.leads?.summary
-    })
+    }),
+    integrationConfig: {
+      baseUrl: configString(config, ["baseUrl", "base_url"], process.env.UAZAPI_BASE_URL) ?? undefined,
+      token: configString(config, ["token", "apiKey", "api_key"], process.env.UAZAPI_TOKEN) ?? undefined
+    }
   });
 }
 
@@ -357,7 +372,15 @@ async function notifyAdmin(supabase: SupabaseClient, organizationId: string, tex
     return;
   }
 
-  await sendUazapiMessage({ phone, text });
+  const config = await getActiveIntegrationConfig(supabase, organizationId, "uazapi");
+  await sendUazapiMessage({
+    phone,
+    text,
+    integrationConfig: {
+      baseUrl: configString(config, ["baseUrl", "base_url"], process.env.UAZAPI_BASE_URL) ?? undefined,
+      token: configString(config, ["token", "apiKey", "api_key"], process.env.UAZAPI_TOKEN) ?? undefined
+    }
+  });
 }
 
 async function getAdminPhone(supabase: SupabaseClient, organizationId: string) {

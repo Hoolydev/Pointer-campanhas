@@ -167,6 +167,34 @@ HAUZAPP_CONTACT_STAGE_ID=1
 HAUZAPP_QUALIFIED_STAGE_ID=2
 ```
 
+Tambem da para controlar pelo front em `/settings/integrations`, criando uma integracao `HauzApp` com JSON:
+
+```json
+{
+  "apiKey": "sua-chave",
+  "prospectionStageId": 1,
+  "qualifiedStageId": 3,
+  "leadAgentId": "uuid-do-agente",
+  "autoGreetProspects": false
+}
+```
+
+E uma integracao `Uazapi`:
+
+```json
+{
+  "baseUrl": "https://sua-uazapi",
+  "token": "seu-token",
+  "leadAgentId": "uuid-do-agente"
+}
+```
+
+Configure o webhook da Uazapi para:
+
+```txt
+https://pointer-campanhas.vercel.app/api/webhooks/uazapi
+```
+
 ## Fluxo de atendimento IA
 
 1. Voce cria um agente em `/settings/agents`.
@@ -176,6 +204,8 @@ HAUZAPP_QUALIFIED_STAGE_ID=2
 5. Se `ai_enabled = true`, o agente selecionado responde, qualifica e atualiza o lead.
 6. Quando qualificado, o lead e enviado ao HauzApp na etapa `Lead Qualificado`.
 7. Se o lead demonstrar intencao de visita, o agente prepara opcoes de agenda e registra em `/appointments`.
+8. A sincronizacao HauzApp em `/settings/integrations` busca leads em `Prospecção` e cria atendimento por Uazapi.
+9. Respostas vindas pela Uazapi chamam o agente configurado e atualizam o CRM.
 
 ## Habilidades inspiradas na secretaria n8n
 

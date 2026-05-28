@@ -4,6 +4,7 @@ type SendUazapiMessageInput = {
   integrationConfig?: {
     baseUrl?: string;
     token?: string;
+    apiKey?: string;
   };
 };
 
@@ -13,7 +14,7 @@ export async function sendUazapiMessage({
   integrationConfig
 }: SendUazapiMessageInput) {
   const baseUrl = integrationConfig?.baseUrl || process.env.UAZAPI_BASE_URL;
-  const token = integrationConfig?.token || process.env.UAZAPI_TOKEN;
+  const token = integrationConfig?.token || integrationConfig?.apiKey || process.env.UAZAPI_TOKEN;
 
   if (!baseUrl || !token) {
     throw new Error("Uazapi credentials are missing.");
@@ -31,10 +32,10 @@ export async function sendUazapiMessage({
     })
   });
 
-  const payload = await response.json().catch(() => ({}));
+  const payload = (await response.json().catch(() => ({}))) as { message?: string };
 
   if (!response.ok) {
-    throw new Error("Uazapi request failed.");
+    throw new Error(payload.message || "Uazapi request failed.");
   }
 
   return payload;
