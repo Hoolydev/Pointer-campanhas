@@ -135,17 +135,22 @@ async function withContactCounts(
     return [];
   }
 
-  const counts = await Promise.all(
-    campaigns.map(async (campaign) => {
-      const { count } = await supabase
-        .from("contacts")
-        .select("*", { count: "exact", head: true })
-        .eq("campaign_id", campaign.id);
+  const campaignIds = campaigns.map((campaign) => campaign.id);
+  const { data: contacts } = await supabase
+    .from("contacts")
+    .select("campaign_id")
+    .in("campaign_id", campaignIds)
+    .limit(100000)
+    .returns<Array<{ campaign_id: string | null }>>();
+  const countMap = new Map<string, number>();
 
-      return [campaign.id, count ?? 0] as const;
-    })
-  );
-  const countMap = new Map(counts);
+  for (const contact of contacts ?? []) {
+    if (!contact.campaign_id) {
+      continue;
+    }
+
+    countMap.set(contact.campaign_id, (countMap.get(contact.campaign_id) ?? 0) + 1);
+  }
 
   return campaigns.map((campaign) => ({
     ...campaign,

@@ -14,6 +14,7 @@ import {
 import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
 import { getCurrentProfile } from "@/lib/auth/organization";
+import { withTimeout } from "@/lib/async/with-timeout";
 import { createClient } from "@/lib/supabase/server";
 import { getMetaPhoneStatus, getMetaTemplates } from "@/services/meta/account";
 
@@ -104,8 +105,14 @@ export default async function DashboardPage() {
       column: "active",
       value: true
     }),
-    getMetaPhoneStatus(),
-    getMetaTemplates()
+    withTimeout(getMetaPhoneStatus(), 1500, {
+      data: null,
+      error: "Consulta Meta demorou demais. Atualize a pagina para tentar novamente."
+    }),
+    withTimeout(getMetaTemplates(), 1500, {
+      data: [],
+      error: "Consulta de templates demorou demais."
+    })
   ]);
 
   const responseRate =

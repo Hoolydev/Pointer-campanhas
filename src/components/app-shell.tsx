@@ -1,9 +1,9 @@
 import Link from "next/link";
+import Image from "next/image";
 import type { Route } from "next";
 import {
   BarChart3,
   Bot,
-  Building2,
   Bell,
   CalendarDays,
   ClipboardList,
@@ -45,11 +45,16 @@ export function AppShell({
     <div className="min-h-screen bg-background">
       <aside className="fixed inset-y-0 left-0 hidden w-64 border-r bg-white lg:block">
         <div className="flex h-16 items-center gap-3 border-b px-6">
-          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <Building2 className="h-5 w-5" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-slate-950">Pointer Campanhas</p>
+          <Image
+            src="/logo.jpeg"
+            alt="Pointer Campanhas"
+            width={150}
+            height={36}
+            priority
+            className="h-auto w-[150px]"
+          />
+          <div className="sr-only">
+            <p>Pointer Campanhas</p>
             <p className="text-xs text-muted-foreground">WhatsApp, IA e CRM</p>
           </div>
         </div>

@@ -3,7 +3,11 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Pointer Campanhas",
-  description: "SaaS para campanhas imobiliarias com WhatsApp, IA e CRM."
+  description: "SaaS para campanhas imobiliarias com WhatsApp, IA e CRM.",
+  icons: {
+    icon: "/logo.jpeg",
+    apple: "/logo.jpeg"
+  }
 };
 
 export default function RootLayout({
