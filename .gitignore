@@ -8,3 +8,6 @@ coverage
 *.log
 *.tsbuildinfo
 .vercel
+n8n-mcp-main/*
+!n8n-mcp-main/pointer-campanhas-workflows/
+!n8n-mcp-main/pointer-campanhas-workflows/**

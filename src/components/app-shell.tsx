@@ -13,6 +13,7 @@ import {
   Megaphone,
   Plug,
   Settings,
+  Smartphone,
   Users
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -27,6 +28,7 @@ const navigation: Array<{ href: Route; label: string; icon: LucideIcon }> = [
   { href: "/reminders" as Route, label: "Lembretes", icon: Bell },
   { href: "/brokers", label: "Corretores", icon: Users },
   { href: "/settings/agents" as Route, label: "Agentes IA", icon: Bot },
+  { href: "/settings/whatsapp" as Route, label: "WhatsApp", icon: Smartphone },
   { href: "/settings/integrations" as Route, label: "Integrações", icon: Plug },
   { href: "/settings/logs" as Route, label: "Logs", icon: ClipboardList },
   { href: "/settings", label: "Configuracoes", icon: Settings }

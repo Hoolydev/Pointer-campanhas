@@ -72,6 +72,54 @@ export function CampaignForm({
     <form action={formAction} onSubmit={handleSubmit} className="grid gap-6 lg:grid-cols-[1fr_360px]">
       <section className="space-y-5 rounded-lg border bg-card p-6 shadow-sm">
         <Field label="Nome interno da campanha" name="name" placeholder="Nativ - Lista Maio" />
+        <section className="grid gap-4 rounded-md border bg-slate-50 p-4 sm:grid-cols-2">
+          <label className="block space-y-2">
+            <span className="text-sm font-semibold text-slate-950">Canal do disparo inicial</span>
+            <select
+              name="dispatch_channel"
+              defaultValue="meta"
+              className="h-11 w-full rounded-md border bg-white px-3 text-sm outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10"
+            >
+              <option value="meta">Meta Cloud API - Template oficial</option>
+              <option value="uazapi">Uazapi - Rodizio humanizado</option>
+            </select>
+          </label>
+          <label className="block space-y-2">
+            <span className="text-sm font-semibold text-slate-950">Rodizio Uazapi</span>
+            <select
+              name="uazapi_instance_strategy"
+              defaultValue="round_robin"
+              className="h-11 w-full rounded-md border bg-white px-3 text-sm outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10"
+            >
+              <option value="round_robin">Alternar pela ordem cadastrada</option>
+              <option value="least_recent">Usar numero menos recente</option>
+            </select>
+          </label>
+          <Field
+            label="Intervalo minimo entre mensagens"
+            name="send_interval_min_seconds"
+            placeholder="90"
+            defaultValue="90"
+          />
+          <Field
+            label="Intervalo maximo entre mensagens"
+            name="send_interval_max_seconds"
+            placeholder="240"
+            defaultValue="240"
+          />
+          <label className="block space-y-2 sm:col-span-2">
+            <span className="text-sm font-medium text-slate-700">Mensagem inicial Uazapi</span>
+            <textarea
+              name="initial_message"
+              rows={3}
+              placeholder="Olá, {{nome}}. Obrigado por responder. Como posso te ajudar?"
+              className="w-full rounded-md border bg-white px-3 py-2 text-sm outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10"
+            />
+          </label>
+          <p className="text-xs leading-5 text-muted-foreground sm:col-span-2">
+            O n8n usa uma pausa aleatoria dentro desse intervalo e alterna entre ate 5 instancias Uazapi ativas.
+          </p>
+        </section>
         <section className="rounded-md border bg-slate-50 p-4">
           <label className="block space-y-2">
             <span className="text-sm font-semibold text-slate-950">
@@ -116,7 +164,6 @@ export function CampaignForm({
           <span className="text-sm font-medium text-slate-700">Template Meta aprovado</span>
           <select
             name="meta_template_name"
-            required
             className="h-11 w-full rounded-md border bg-white px-3 text-sm outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10"
           >
             <option value="">Selecione um template</option>

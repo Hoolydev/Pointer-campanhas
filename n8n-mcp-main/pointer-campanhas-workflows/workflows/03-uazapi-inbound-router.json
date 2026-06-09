@@ -1,0 +1,67 @@
+{
+  "name": "Pointer - 03 Uazapi Inbound Router",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pointer/uazapi-inbound",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-uazapi-inbound",
+      "name": "Webhook Uazapi Inbound",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-720, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = $json.body || $json;\nconst phone = String(payload.phone || payload.from || '').replace(/\\D/g, '');\nreturn [{ json: { payload, phone, text: payload.text || payload.message || '' } }];"
+      },
+      "id": "normalize-uazapi",
+      "name": "Normalize Uazapi Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-500, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.POINTER_APP_URL}}/api/webhooks/uazapi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json.payload}}",
+        "options": {}
+      },
+      "id": "forward-to-app-uazapi",
+      "name": "Forward To Pointer Uazapi Handler",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-260, 0]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{$json}}"
+      },
+      "id": "respond-uazapi-ok",
+      "name": "Respond Uazapi OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-20, 0]
+    }
+  ],
+  "connections": {
+    "Webhook Uazapi Inbound": { "main": [[{ "node": "Normalize Uazapi Payload", "type": "main", "index": 0 }]] },
+    "Normalize Uazapi Payload": { "main": [[{ "node": "Forward To Pointer Uazapi Handler", "type": "main", "index": 0 }]] },
+    "Forward To Pointer Uazapi Handler": { "main": [[{ "node": "Respond Uazapi OK", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1", "saveExecutionProgress": true },
+  "active": false
+}

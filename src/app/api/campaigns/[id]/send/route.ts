@@ -22,6 +22,11 @@ type ContactRow = {
 type CampaignRow = {
   id: string;
   organization_id: string;
+  dispatch_channel: "meta" | "uazapi";
+  n8n_enabled: boolean;
+  send_interval_min_seconds: number;
+  send_interval_max_seconds: number;
+  uazapi_instance_strategy: "round_robin" | "least_recent";
   initial_message: string | null;
   meta_template_name: string | null;
   meta_template_language: string;
@@ -66,7 +71,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   const { data: campaign } = await supabase
     .from("campaigns")
-    .select("id, organization_id, initial_message, meta_template_name, meta_template_language, meta_template_body_params, meta_header_media_type, meta_header_media_url, meta_header_media_id")
+    .select("id, organization_id, dispatch_channel, n8n_enabled, send_interval_min_seconds, send_interval_max_seconds, uazapi_instance_strategy, initial_message, meta_template_name, meta_template_language, meta_template_body_params, meta_header_media_type, meta_header_media_url, meta_header_media_id")
     .eq("id", id)
     .eq("organization_id", profile.organization_id)
     .single<CampaignRow>();
@@ -75,7 +80,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Campanha nao encontrada." }, { status: 404 });
   }
 
-  if (!campaign.meta_template_name) {
+  if (campaign.dispatch_channel === "meta" && !campaign.meta_template_name) {
     return NextResponse.json(
       { error: "Configure um template Meta aprovado antes de disparar a campanha." },
       { status: 400 }
@@ -139,21 +144,36 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   const n8nDispatchWebhookUrl = process.env.N8N_CAMPAIGN_DISPATCH_WEBHOOK_URL;
 
-  if (parsed.data.processor === "n8n" && n8nDispatchWebhookUrl) {
+  if (campaign.dispatch_channel === "uazapi" && !n8nDispatchWebhookUrl) {
+    return NextResponse.json(
+      { error: "Configure N8N_CAMPAIGN_DISPATCH_WEBHOOK_URL para disparos Uazapi." },
+      { status: 400 }
+    );
+  }
+
+  if ((parsed.data.processor === "n8n" || campaign.n8n_enabled) && n8nDispatchWebhookUrl) {
+    const headers: HeadersInit = {
+      "Content-Type": "application/json"
+    };
+
+    if (process.env.N8N_WEBHOOK_SECRET) {
+      headers.Authorization = `Bearer ${process.env.N8N_WEBHOOK_SECRET}`;
+    }
+
     const response = await fetch(n8nDispatchWebhookUrl, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
+      headers,
       body: JSON.stringify({
+        event: "campaign.dispatch.requested",
         campaignId: campaign.id,
         organizationId: profile.organization_id,
+        requestedBy: profile.id,
         limit: parsed.data.limit,
+        dispatchChannel: campaign.dispatch_channel,
         intervalSeconds: parsed.data.intervalSeconds,
-        supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
-        supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
-        metaAccessToken: process.env.META_ACCESS_TOKEN,
-        metaPhoneNumberId: process.env.META_PHONE_NUMBER_ID
+        minDelaySeconds: campaign.send_interval_min_seconds,
+        maxDelaySeconds: campaign.send_interval_max_seconds,
+        uazapiInstanceStrategy: campaign.uazapi_instance_strategy
       })
     });
 

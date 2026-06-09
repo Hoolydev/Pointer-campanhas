@@ -1,0 +1,49 @@
+{
+  "name": "Pointer - 05 Broker SLA Orchestrator",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "every-5-minutes",
+      "name": "Every 5 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-520, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.POINTER_APP_URL}}/api/jobs/process",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{$env.POINTER_N8N_WEBHOOK_SECRET}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"reason\":\"n8n_broker_sla_tick\"}",
+        "options": {}
+      },
+      "id": "process-pointer-jobs",
+      "name": "Process Pointer Jobs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-260, 0]
+    }
+  ],
+  "connections": {
+    "Every 5 Minutes": { "main": [[{ "node": "Process Pointer Jobs", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1", "saveExecutionProgress": true },
+  "active": false
+}

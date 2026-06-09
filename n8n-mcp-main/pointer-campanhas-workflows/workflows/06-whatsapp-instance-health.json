@@ -1,0 +1,51 @@
+{
+  "name": "Pointer - 06 WhatsApp Instance Health",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 24
+            }
+          ]
+        }
+      },
+      "id": "daily-maintenance",
+      "name": "Daily Maintenance",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-720, 0]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/whatsapp_instances?sent_today_date=neq.{{new Date().toISOString().slice(0,10)}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{$env.SUPABASE_SERVICE_ROLE_KEY}}" },
+            { "name": "Authorization", "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"sent_today\":0,\"sent_today_date\":new Date().toISOString().slice(0,10)}",
+        "options": {}
+      },
+      "id": "reset-daily-counters",
+      "name": "Reset Daily Counters",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-460, 0]
+    }
+  ],
+  "connections": {
+    "Daily Maintenance": { "main": [[{ "node": "Reset Daily Counters", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1", "saveExecutionProgress": true },
+  "active": false
+}

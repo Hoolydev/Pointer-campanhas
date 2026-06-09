@@ -13,24 +13,39 @@ type CreateCampaignState = {
   error?: string;
 };
 
-const campaignSchema = z.object({
-  name: z.string().min(2, "Informe o nome da campanha."),
-  meta_template_name: z.string().min(2, "Informe o nome do template aprovado na Meta."),
-  meta_template_language: z.string().min(2).default("pt_BR"),
-  meta_template_body_params: z.string().optional(),
-  meta_header_media_type: z.enum(["", "image", "video", "document"]).optional(),
-  meta_header_media_id: z.string().optional(),
-  agent_id: z.string().uuid("Selecione o agente de IA que vai atender as respostas."),
-  material_title_1: z.string().optional(),
-  material_url_1: z.string().url().optional().or(z.literal("")),
-  material_type_1: z.enum(["image", "video", "audio", "document", "link"]).optional(),
-  material_title_2: z.string().optional(),
-  material_url_2: z.string().url().optional().or(z.literal("")),
-  material_type_2: z.enum(["image", "video", "audio", "document", "link"]).optional(),
-  material_title_3: z.string().optional(),
-  material_url_3: z.string().url().optional().or(z.literal("")),
-  material_type_3: z.enum(["image", "video", "audio", "document", "link"]).optional()
-});
+const campaignSchema = z
+  .object({
+    name: z.string().min(2, "Informe o nome da campanha."),
+    dispatch_channel: z.enum(["meta", "uazapi"]).default("meta"),
+    send_interval_min_seconds: z.coerce.number().int().min(10).max(7200).default(90),
+    send_interval_max_seconds: z.coerce.number().int().min(10).max(7200).default(240),
+    uazapi_instance_strategy: z.enum(["round_robin", "least_recent"]).default("round_robin"),
+    initial_message: z.string().optional(),
+    meta_template_name: z.string().optional(),
+    meta_template_language: z.string().min(2).default("pt_BR"),
+    meta_template_body_params: z.string().optional(),
+    meta_header_media_type: z.enum(["", "image", "video", "document"]).optional(),
+    meta_header_media_id: z.string().optional(),
+    agent_id: z.string().uuid("Selecione o agente de IA que vai atender as respostas."),
+    material_title_1: z.string().optional(),
+    material_url_1: z.string().url().optional().or(z.literal("")),
+    material_type_1: z.enum(["image", "video", "audio", "document", "link"]).optional(),
+    material_title_2: z.string().optional(),
+    material_url_2: z.string().url().optional().or(z.literal("")),
+    material_type_2: z.enum(["image", "video", "audio", "document", "link"]).optional(),
+    material_title_3: z.string().optional(),
+    material_url_3: z.string().url().optional().or(z.literal("")),
+    material_type_3: z.enum(["image", "video", "audio", "document", "link"]).optional()
+  })
+  .superRefine((data, context) => {
+    if (data.dispatch_channel === "meta" && !data.meta_template_name?.trim()) {
+      context.addIssue({
+        code: "custom",
+        path: ["meta_template_name"],
+        message: "Informe o template aprovado da Meta para campanhas oficiais."
+      });
+    }
+  });
 
 export async function createCampaignAction(
   _: CreateCampaignState | null,
@@ -38,7 +53,12 @@ export async function createCampaignAction(
 ): Promise<CreateCampaignState> {
   const parsed = campaignSchema.safeParse({
     name: formData.get("name"),
-    meta_template_name: formData.get("meta_template_name"),
+    dispatch_channel: formData.get("dispatch_channel") || "meta",
+    send_interval_min_seconds: formData.get("send_interval_min_seconds") || 90,
+    send_interval_max_seconds: formData.get("send_interval_max_seconds") || 240,
+    uazapi_instance_strategy: formData.get("uazapi_instance_strategy") || "round_robin",
+    initial_message: formData.get("initial_message") || undefined,
+    meta_template_name: formData.get("meta_template_name") || undefined,
     meta_template_language: formData.get("meta_template_language") || "pt_BR",
     meta_template_body_params: formData.get("meta_template_body_params") || undefined,
     meta_header_media_type: formData.get("meta_header_media_type") || "",
@@ -57,6 +77,10 @@ export async function createCampaignAction(
 
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Revise os campos da campanha." };
+  }
+
+  if (parsed.data.send_interval_max_seconds < parsed.data.send_interval_min_seconds) {
+    return { error: "O intervalo maximo precisa ser maior ou igual ao minimo." };
   }
 
   const file = formData.get("contacts_file");
@@ -133,15 +157,20 @@ export async function createCampaignAction(
       created_by: profile.id,
       status: "draft",
       name: parsed.data.name,
-      property_description: `Campanha criada com o agente selecionado e template ${parsed.data.meta_template_name}.
+      dispatch_channel: parsed.data.dispatch_channel,
+      n8n_enabled: true,
+      send_interval_min_seconds: parsed.data.send_interval_min_seconds,
+      send_interval_max_seconds: parsed.data.send_interval_max_seconds,
+      uazapi_instance_strategy: parsed.data.uazapi_instance_strategy,
+      property_description: `Campanha criada com o agente selecionado e canal ${parsed.data.dispatch_channel}.
 
 Importacao:
 - Linhas lidas: ${importResult.totalRows}
 - Contatos validos importados: ${importResult.importedRows}
 - Numeros invalidos/sem DDD: ${importResult.invalidRows}
 - Duplicados ignorados: ${importResult.duplicateRows}`,
-      initial_message: null,
-      meta_template_name: parsed.data.meta_template_name,
+      initial_message: parsed.data.initial_message || null,
+      meta_template_name: parsed.data.meta_template_name || null,
       meta_template_language: parsed.data.meta_template_language,
       meta_template_body_params: parseTemplateParams(parsed.data.meta_template_body_params),
       meta_header_media_type: headerMediaType,

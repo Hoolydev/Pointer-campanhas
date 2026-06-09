@@ -19,10 +19,10 @@ export function SendCampaignButton({ campaignId }: { campaignId: string }) {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        intervalSeconds: 30,
+        intervalSeconds: 90,
         limit: 10000,
         enqueueAll: true,
-        processor: "qstash"
+        processor: "n8n"
       })
     });
 

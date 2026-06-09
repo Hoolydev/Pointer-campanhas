@@ -1,0 +1,57 @@
+{
+  "name": "Pointer - 02 Meta Inbound Lead Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pointer/meta-inbound",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-meta-inbound",
+      "name": "Webhook Meta Inbound",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-720, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.POINTER_APP_URL}}/api/webhooks/meta",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Authorization", "value": "=Bearer {{$env.POINTER_N8N_WEBHOOK_SECRET}}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json.body || $json}}",
+        "options": {}
+      },
+      "id": "forward-to-app-meta",
+      "name": "Forward To Pointer Meta Handler",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-460, 0]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{$json}}"
+      },
+      "id": "respond-meta-ok",
+      "name": "Respond Meta OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-220, 0]
+    }
+  ],
+  "connections": {
+    "Webhook Meta Inbound": { "main": [[{ "node": "Forward To Pointer Meta Handler", "type": "main", "index": 0 }]] },
+    "Forward To Pointer Meta Handler": { "main": [[{ "node": "Respond Meta OK", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1", "saveExecutionProgress": true },
+  "active": false
+}

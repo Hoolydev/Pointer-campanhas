@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Route } from "next";
-import { Bot, ClipboardList, MessageSquareText, Plug } from "lucide-react";
+import { Bot, ClipboardList, MessageSquareText, Plug, Smartphone } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 
 const settingsLinks: Array<{
@@ -14,6 +14,12 @@ const settingsLinks: Array<{
     title: "Integrações",
     description: "Conectar HauzApp, Uazapi e configurar o webhook.",
     icon: Plug
+  },
+  {
+    href: "/settings/whatsapp" as Route,
+    title: "WhatsApp",
+    description: "Gerenciar Meta e ate 5 instancias Uazapi para rodizio.",
+    icon: Smartphone
   },
   {
     href: "/settings/agents" as Route,
