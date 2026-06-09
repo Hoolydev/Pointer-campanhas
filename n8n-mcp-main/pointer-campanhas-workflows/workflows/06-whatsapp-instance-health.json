@@ -20,27 +20,20 @@
     },
     {
       "parameters": {
-        "method": "PATCH",
-        "url": "__SUPABASE_URL__/rest/v1/whatsapp_instances?sent_today_date=neq.{{new Date().toISOString().slice(0,10)}}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "apikey", "value": "__SUPABASE_SERVICE_ROLE_KEY__" },
-            { "name": "Authorization", "value": "Bearer __SUPABASE_SERVICE_ROLE_KEY__" },
-            { "name": "Content-Type", "value": "application/json" },
-            { "name": "Prefer", "value": "return=minimal" }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={\"sent_today\":0,\"sent_today_date\":new Date().toISOString().slice(0,10)}",
-        "options": {}
+        "operation": "executeQuery",
+        "query": "update public.whatsapp_instances\nset sent_today = 0,\n    sent_today_date = current_date,\n    updated_at = now()\nwhere sent_today_date is distinct from current_date\nreturning id, name, sent_today_date;"
       },
       "id": "reset-daily-counters",
       "name": "Reset Daily Counters",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [-460, 0]
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [-460, 0],
+      "credentials": {
+        "postgres": {
+          "id": "__N8N_POSTGRES_CREDENTIAL_ID__",
+          "name": "__N8N_POSTGRES_CREDENTIAL_NAME__"
+        }
+      }
     }
   ],
   "connections": {

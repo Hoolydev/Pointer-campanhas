@@ -136,6 +136,10 @@ function buildMaterializedValues() {
       "",
     SUPABASE_URL: process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "",
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
+    N8N_POSTGRES_CREDENTIAL_ID:
+      process.env.N8N_POSTGRES_CREDENTIAL_ID || "forN7iUdAHkHiWyM",
+    N8N_POSTGRES_CREDENTIAL_NAME:
+      process.env.N8N_POSTGRES_CREDENTIAL_NAME || "Pointer Supabase Postgres",
     META_ACCESS_TOKEN: process.env.META_ACCESS_TOKEN || "",
     META_PHONE_NUMBER_ID: process.env.META_PHONE_NUMBER_ID || ""
   };
