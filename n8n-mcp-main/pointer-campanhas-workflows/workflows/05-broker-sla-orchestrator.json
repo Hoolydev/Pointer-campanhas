@@ -21,11 +21,11 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{$env.POINTER_APP_URL}}/api/jobs/process",
+        "url": "__POINTER_APP_URL__/api/jobs/process",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Authorization", "value": "=Bearer {{$env.POINTER_N8N_WEBHOOK_SECRET}}" },
+            { "name": "Authorization", "value": "Bearer __POINTER_N8N_WEBHOOK_SECRET__" },
             { "name": "Content-Type", "value": "application/json" }
           ]
         },

@@ -17,12 +17,12 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{$env.POINTER_APP_URL}}/api/webhooks/meta",
+        "url": "__POINTER_APP_URL__/api/webhooks/meta",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
             { "name": "Content-Type", "value": "application/json" },
-            { "name": "Authorization", "value": "=Bearer {{$env.POINTER_N8N_WEBHOOK_SECRET}}" }
+            { "name": "Authorization", "value": "Bearer __POINTER_N8N_WEBHOOK_SECRET__" }
           ]
         },
         "sendBody": true,

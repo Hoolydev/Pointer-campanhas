@@ -27,7 +27,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{$env.POINTER_APP_URL}}/api/webhooks/uazapi",
+        "url": "__POINTER_APP_URL__/api/webhooks/uazapi",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [

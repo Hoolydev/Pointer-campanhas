@@ -2,9 +2,17 @@
 
 Esta pasta versiona os fluxos n8n que assumem a automacao operacional do Pointer Campanhas.
 
-## Variaveis no n8n
+## Materializacao de chaves
 
-Configure estas variaveis no ambiente do n8n:
+O n8n self-hosted usado neste projeto nao depende de `$env.*` nos fluxos. Os arquivos JSON ficam com placeholders seguros e o script `deploy-workflows.mjs` substitui pelos valores reais antes de atualizar o n8n via API.
+
+Os valores sao lidos de:
+
+- `.env.local`
+- `.env.vercel.tmp`, quando gerado por `vercel env pull`
+- variaveis exportadas no terminal
+
+## Valores necessarios
 
 ```env
 POINTER_APP_URL=https://pointer-campanhas.vercel.app
@@ -35,13 +43,15 @@ Os tokens Uazapi e instancias ficam no Supabase, cadastrados pelo front em `/set
 - `05-broker-sla-orchestrator.json`: executa as regras de cobranca dos corretores, visitas, escalonamento e lembretes.
 - `06-whatsapp-instance-health.json`: rotina para resetar contadores diarios e auditar instancias.
 
-## Importar no n8n
+## Atualizar no n8n
 
 ```bash
 cd n8n-mcp-main/pointer-campanhas-workflows
 N8N_BASE_URL="https://n8n.growthailabs.com.br" \
 N8N_API_KEY="cole-a-chave-localmente" \
-node scripts/import-workflows.mjs
+node scripts/deploy-workflows.mjs
 ```
 
-Depois de importar, ative os workflows no painel do n8n e copie a URL do webhook de `01-campaign-dispatch-router` para `N8N_CAMPAIGN_DISPATCH_WEBHOOK_URL` na Vercel.
+O script atualiza workflows existentes pelo nome, cria os ausentes e reativa os que ja estavam ativos.
+
+Depois do deploy, copie a URL do webhook de `01-campaign-dispatch-router` para `N8N_CAMPAIGN_DISPATCH_WEBHOOK_URL` na Vercel.

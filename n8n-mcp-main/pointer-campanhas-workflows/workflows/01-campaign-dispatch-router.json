@@ -12,81 +12,27 @@
       "name": "Webhook Campaign Dispatch",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [-980, 0]
+      "position": [-900, 0]
     },
     {
       "parameters": {
-        "jsCode": "const secret = $env.POINTER_N8N_WEBHOOK_SECRET;\nconst auth = $json.headers?.authorization || $json.headers?.Authorization || '';\nif (secret && auth !== `Bearer ${secret}`) throw new Error('Unauthorized');\nconst body = $json.body || $json;\nif (!body.campaignId || !body.organizationId) throw new Error('campaignId/organizationId ausentes');\nreturn [{ json: body }];"
+        "jsCode": "const secret = '__POINTER_N8N_WEBHOOK_SECRET__';\nconst auth = $json.headers?.authorization || $json.headers?.Authorization || '';\nif (secret && auth !== `Bearer ${secret}`) throw new Error('Unauthorized');\nconst body = $json.body || $json;\nif (!body.campaign?.id || !body.organizationId) throw new Error('campaign/organization ausentes');\nif (!Array.isArray(body.contacts)) throw new Error('contacts ausente');\nreturn [{ json: body }];"
       },
       "id": "auth-guard",
       "name": "Auth Guard",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-760, 0]
+      "position": [-660, 0]
     },
     {
       "parameters": {
-        "url": "={{$env.SUPABASE_URL}}/rest/v1/campaigns?id=eq.{{$json.campaignId}}&organization_id=eq.{{$json.organizationId}}&select=*",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "apikey", "value": "={{$env.SUPABASE_SERVICE_ROLE_KEY}}" },
-            { "name": "Authorization", "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}" }
-          ]
-        },
-        "options": {}
-      },
-      "id": "fetch-campaign",
-      "name": "Fetch Campaign",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [-540, -160]
-    },
-    {
-      "parameters": {
-        "url": "={{$env.SUPABASE_URL}}/rest/v1/contacts?campaign_id=eq.{{$node[\"Auth Guard\"].json.campaignId}}&organization_id=eq.{{$node[\"Auth Guard\"].json.organizationId}}&status=in.(pending,failed)&select=id,name,phone,status&order=created_at.asc&limit={{$node[\"Auth Guard\"].json.limit || 10000}}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "apikey", "value": "={{$env.SUPABASE_SERVICE_ROLE_KEY}}" },
-            { "name": "Authorization", "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}" }
-          ]
-        },
-        "options": {}
-      },
-      "id": "fetch-contacts",
-      "name": "Fetch Contacts",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [-540, 0]
-    },
-    {
-      "parameters": {
-        "url": "={{$env.SUPABASE_URL}}/rest/v1/whatsapp_instances?organization_id=eq.{{$node[\"Auth Guard\"].json.organizationId}}&provider=eq.uazapi&active=eq.true&select=*&order=send_order.asc,last_sent_at.asc",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "apikey", "value": "={{$env.SUPABASE_SERVICE_ROLE_KEY}}" },
-            { "name": "Authorization", "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}" }
-          ]
-        },
-        "options": {}
-      },
-      "id": "fetch-uazapi-instances",
-      "name": "Fetch Uazapi Instances",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [-540, 160]
-    },
-    {
-      "parameters": {
-        "jsCode": "const input = $('Auth Guard').first().json;\nconst campaign = $('Fetch Campaign').first().json?.[0];\nconst contacts = $('Fetch Contacts').first().json || [];\nconst instances = $('Fetch Uazapi Instances').first().json || [];\nif (!campaign) throw new Error('Campanha nao encontrada');\nif (campaign.dispatch_channel === 'uazapi' && instances.length === 0) throw new Error('Nenhuma instancia Uazapi ativa');\nconst minDelay = Number(campaign.send_interval_min_seconds || input.minDelaySeconds || 90);\nconst maxDelay = Number(campaign.send_interval_max_seconds || input.maxDelaySeconds || 240);\nlet accumulatedDelay = 0;\nreturn contacts.map((contact, index) => {\n  const delay = Math.floor(minDelay + Math.random() * Math.max(1, maxDelay - minDelay));\n  accumulatedDelay += delay;\n  const instance = instances.length ? instances[index % Math.min(instances.length, 5)] : null;\n  return { json: { input, campaign, contact, instance, delaySeconds: accumulatedDelay } };\n});"
+        "jsCode": "const body = $json;\nconst campaign = body.campaign;\nconst contacts = body.contacts || [];\nconst instances = (body.uazapiInstances || []).slice(0, 5);\nif (campaign.dispatchChannel === 'uazapi' && instances.length === 0) throw new Error('Nenhuma instancia Uazapi ativa no payload');\nconst minDelay = Number(body.minDelaySeconds || campaign.minDelaySeconds || 90);\nconst maxDelay = Number(body.maxDelaySeconds || campaign.maxDelaySeconds || 240);\nlet accumulatedDelay = 0;\nreturn contacts.map((contact, index) => {\n  const delay = Math.floor(minDelay + Math.random() * Math.max(1, maxDelay - minDelay));\n  accumulatedDelay += delay;\n  const instance = instances.length ? instances[index % instances.length] : null;\n  return { json: { body, campaign, contact, instance, meta: body.meta || {}, delaySeconds: accumulatedDelay } };\n});"
       },
       "id": "build-dispatch-items",
       "name": "Build Dispatch Items",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-260, 0]
+      "position": [-420, 0]
     },
     {
       "parameters": {
@@ -97,7 +43,7 @@
       "name": "Humanized Wait",
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
-      "position": [-20, 0],
+      "position": [-180, 0],
       "webhookId": "pointer-campaign-wait"
     },
     {
@@ -105,7 +51,7 @@
         "conditions": {
           "string": [
             {
-              "value1": "={{$json.campaign.dispatch_channel}}",
+              "value1": "={{$json.campaign.dispatchChannel}}",
               "operation": "equals",
               "value2": "meta"
             }
@@ -116,34 +62,34 @@
       "name": "Is Meta?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
-      "position": [220, 0]
+      "position": [60, 0]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://graph.facebook.com/v21.0/{{$json.campaign.meta_phone_number_id || $env.META_PHONE_NUMBER_ID}}/messages",
+        "url": "=https://graph.facebook.com/v21.0/{{$json.meta.phoneNumberId || $json.campaign.metaPhoneNumberId}}/messages",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Authorization", "value": "=Bearer {{$env.META_ACCESS_TOKEN}}" },
+            { "name": "Authorization", "value": "=Bearer {{$json.meta.accessToken}}" },
             { "name": "Content-Type", "value": "application/json" }
           ]
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\"messaging_product\":\"whatsapp\",\"to\":$json.contact.phone,\"type\":\"template\",\"template\":{\"name\":$json.campaign.meta_template_name,\"language\":{\"code\":$json.campaign.meta_template_language || 'pt_BR'},\"components\":[{\"type\":\"body\",\"parameters\":[{\"type\":\"text\",\"parameter_name\":\"nome\",\"text\":$json.contact.name || ''}]}]}}",
+        "jsonBody": "={\"messaging_product\":\"whatsapp\",\"to\":$json.contact.phone,\"type\":\"template\",\"template\":{\"name\":$json.campaign.metaTemplateName,\"language\":{\"code\":$json.campaign.metaTemplateLanguage || 'pt_BR'},\"components\":$json.contact.components || []}}",
         "options": {}
       },
       "id": "send-meta-template",
       "name": "Send Meta Template",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [500, -120]
+      "position": [340, -120]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{$json.instance.base_url.replace(/\\/$/, '')}}/send-message",
+        "url": "={{$json.instance.baseUrl.replace(/\\/$/, '')}}/send-message",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -153,38 +99,14 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { phone: $json.contact.phone, message: String($json.campaign.initial_message || 'Olá, {{nome}}. Obrigado por responder. Como posso te ajudar?').replace(/{{\\s*nome\\s*}}/g, $json.contact.name || '').replace(/{{\\s*name\\s*}}/g, $json.contact.name || '') } }}",
+        "jsonBody": "={{ { phone: $json.contact.phone, message: String($json.campaign.initialMessage || 'Olá, {{nome}}. Obrigado por responder. Como posso te ajudar?').replace(/{{\\s*nome\\s*}}/g, $json.contact.name || '').replace(/{{\\s*name\\s*}}/g, $json.contact.name || '') } }}",
         "options": {}
       },
       "id": "send-uazapi-message",
       "name": "Send Uazapi Message",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [500, 120]
-    },
-    {
-      "parameters": {
-        "method": "PATCH",
-        "url": "={{$env.SUPABASE_URL}}/rest/v1/contacts?id=eq.{{$json.contact.id}}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "apikey", "value": "={{$env.SUPABASE_SERVICE_ROLE_KEY}}" },
-            { "name": "Authorization", "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}" },
-            { "name": "Content-Type", "value": "application/json" },
-            { "name": "Prefer", "value": "return=minimal" }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "{\"status\":\"sent\"}",
-        "options": {}
-      },
-      "id": "mark-contact-sent",
-      "name": "Mark Contact Sent",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [760, 0]
+      "position": [340, 120]
     },
     {
       "parameters": {
@@ -195,21 +117,17 @@
       "name": "Respond OK",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [980, 0]
+      "position": [620, 0]
     }
   ],
   "connections": {
     "Webhook Campaign Dispatch": { "main": [[{ "node": "Auth Guard", "type": "main", "index": 0 }]] },
-    "Auth Guard": { "main": [[{ "node": "Fetch Campaign", "type": "main", "index": 0 }]] },
-    "Fetch Campaign": { "main": [[{ "node": "Fetch Contacts", "type": "main", "index": 0 }]] },
-    "Fetch Contacts": { "main": [[{ "node": "Fetch Uazapi Instances", "type": "main", "index": 0 }]] },
-    "Fetch Uazapi Instances": { "main": [[{ "node": "Build Dispatch Items", "type": "main", "index": 0 }]] },
+    "Auth Guard": { "main": [[{ "node": "Build Dispatch Items", "type": "main", "index": 0 }]] },
     "Build Dispatch Items": { "main": [[{ "node": "Humanized Wait", "type": "main", "index": 0 }]] },
     "Humanized Wait": { "main": [[{ "node": "Is Meta?", "type": "main", "index": 0 }]] },
     "Is Meta?": { "main": [[{ "node": "Send Meta Template", "type": "main", "index": 0 }], [{ "node": "Send Uazapi Message", "type": "main", "index": 0 }]] },
-    "Send Meta Template": { "main": [[{ "node": "Mark Contact Sent", "type": "main", "index": 0 }]] },
-    "Send Uazapi Message": { "main": [[{ "node": "Mark Contact Sent", "type": "main", "index": 0 }]] },
-    "Mark Contact Sent": { "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]] }
+    "Send Meta Template": { "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]] },
+    "Send Uazapi Message": { "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]] }
   },
   "settings": { "executionOrder": "v1", "saveExecutionProgress": true },
   "active": false

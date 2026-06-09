@@ -21,12 +21,12 @@
     {
       "parameters": {
         "method": "PATCH",
-        "url": "={{$env.SUPABASE_URL}}/rest/v1/whatsapp_instances?sent_today_date=neq.{{new Date().toISOString().slice(0,10)}}",
+        "url": "__SUPABASE_URL__/rest/v1/whatsapp_instances?sent_today_date=neq.{{new Date().toISOString().slice(0,10)}}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey", "value": "={{$env.SUPABASE_SERVICE_ROLE_KEY}}" },
-            { "name": "Authorization", "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}" },
+            { "name": "apikey", "value": "__SUPABASE_SERVICE_ROLE_KEY__" },
+            { "name": "Authorization", "value": "Bearer __SUPABASE_SERVICE_ROLE_KEY__" },
             { "name": "Content-Type", "value": "application/json" },
             { "name": "Prefer", "value": "return=minimal" }
           ]

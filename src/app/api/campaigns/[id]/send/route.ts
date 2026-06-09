@@ -36,6 +36,19 @@ type CampaignRow = {
   meta_header_media_id: string | null;
 };
 
+type WhatsappInstanceRow = {
+  id: string;
+  name: string;
+  phone: string | null;
+  base_url: string | null;
+  token: string | null;
+  instance_key: string | null;
+  min_delay_seconds: number;
+  max_delay_seconds: number;
+  daily_limit: number;
+  sent_today: number;
+};
+
 type QstashPublishResult =
   | Awaited<ReturnType<typeof publishJobProcessor>>
   | { published: false; reason: string };
@@ -152,12 +165,39 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   if ((parsed.data.processor === "n8n" || campaign.n8n_enabled) && n8nDispatchWebhookUrl) {
+    const { data: uazapiInstances, error: instancesError } =
+      campaign.dispatch_channel === "uazapi"
+        ? await supabase
+            .from("whatsapp_instances")
+            .select("id, name, phone, base_url, token, instance_key, min_delay_seconds, max_delay_seconds, daily_limit, sent_today")
+            .eq("organization_id", profile.organization_id)
+            .eq("provider", "uazapi")
+            .eq("active", true)
+            .order("send_order", { ascending: true })
+            .limit(5)
+            .returns<WhatsappInstanceRow[]>()
+        : { data: [], error: null };
+
+    if (instancesError) {
+      return NextResponse.json({ error: instancesError.message }, { status: 500 });
+    }
+
+    if (campaign.dispatch_channel === "uazapi" && !uazapiInstances?.length) {
+      return NextResponse.json(
+        { error: "Cadastre ao menos uma instancia Uazapi ativa em Configuracoes > WhatsApp." },
+        { status: 400 }
+      );
+    }
+
     const headers: HeadersInit = {
       "Content-Type": "application/json"
     };
 
-    if (process.env.N8N_WEBHOOK_SECRET) {
-      headers.Authorization = `Bearer ${process.env.N8N_WEBHOOK_SECRET}`;
+    const n8nSecret =
+      process.env.N8N_WEBHOOK_SECRET || process.env.TRIGGER_SECRET_KEY || process.env.CRON_SECRET;
+
+    if (n8nSecret) {
+      headers.Authorization = `Bearer ${n8nSecret}`;
     }
 
     const response = await fetch(n8nDispatchWebhookUrl, {
@@ -165,15 +205,53 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       headers,
       body: JSON.stringify({
         event: "campaign.dispatch.requested",
-        campaignId: campaign.id,
         organizationId: profile.organization_id,
         requestedBy: profile.id,
         limit: parsed.data.limit,
-        dispatchChannel: campaign.dispatch_channel,
         intervalSeconds: parsed.data.intervalSeconds,
         minDelaySeconds: campaign.send_interval_min_seconds,
         maxDelaySeconds: campaign.send_interval_max_seconds,
-        uazapiInstanceStrategy: campaign.uazapi_instance_strategy
+        uazapiInstanceStrategy: campaign.uazapi_instance_strategy,
+        campaign: {
+          id: campaign.id,
+          dispatchChannel: campaign.dispatch_channel,
+          initialMessage: campaign.initial_message,
+          metaTemplateName: campaign.meta_template_name,
+          metaTemplateLanguage: campaign.meta_template_language,
+          metaPhoneNumberId: process.env.META_PHONE_NUMBER_ID || null,
+          minDelaySeconds: campaign.send_interval_min_seconds,
+          maxDelaySeconds: campaign.send_interval_max_seconds
+        },
+        meta: {
+          accessToken: process.env.META_ACCESS_TOKEN || null,
+          phoneNumberId: process.env.META_PHONE_NUMBER_ID || null
+        },
+        uazapiInstances: (uazapiInstances ?? []).map((instance) => ({
+          id: instance.id,
+          name: instance.name,
+          phone: instance.phone,
+          baseUrl: instance.base_url,
+          token: instance.token,
+          instanceKey: instance.instance_key,
+          minDelaySeconds: instance.min_delay_seconds,
+          maxDelaySeconds: instance.max_delay_seconds,
+          dailyLimit: instance.daily_limit,
+          sentToday: instance.sent_today
+        })),
+        contacts: contacts.map((contact) => ({
+          id: contact.id,
+          name: contact.name,
+          phone: contact.phone,
+          components: buildTemplateComponents({
+            params: campaign.meta_template_body_params,
+            contact,
+            header: {
+              type: campaign.meta_header_media_type,
+              url: campaign.meta_header_media_url,
+              id: campaign.meta_header_media_id
+            }
+          })
+        }))
       })
     });
 
@@ -186,6 +264,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         },
         { status: 502 }
       );
+    }
+
+    for (const chunk of chunkArray(contacts, 500)) {
+      await supabase
+        .from("contacts")
+        .update({ status: "queued" })
+        .in(
+          "id",
+          chunk.map((contact) => contact.id)
+        );
     }
 
     return NextResponse.json({
