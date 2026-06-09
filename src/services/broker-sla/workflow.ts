@@ -6,6 +6,8 @@ import { publishJobProcessor } from "@/services/qstash/jobs";
 import { sendUazapiMessage } from "@/services/uazapi/send-message";
 
 const PROTECTED_STAGES = new Set(["reaquecer", "cliente_quente", "visit", "visita", "proposal", "proposta", "lost", "perdeu", "won", "ganhou"]);
+const VISIT_OR_LATER_STAGES = new Set(["visit", "visita", "proposal", "proposta", "lost", "perdeu", "won", "ganhou"]);
+const PROPOSAL_STAGES = new Set(["proposal", "proposta"]);
 
 type AssignmentContext = {
   id: string;
@@ -151,7 +153,22 @@ export async function processBrokerProgressCheck(supabase: SupabaseClient, job: 
     return markDone(supabase, job.id, "cancelled", "assignment_not_accepted");
   }
 
-  await notifyBroker(supabase, context, `Ola, {{broker_name}}. Como esta o atendimento do lead {{lead_name}}?\n\nTeve visita, proposta ou alguma atualizacao de funil? Me responda aqui para eu atualizar o sistema.`);
+  const stage = normalizeStage(context.leads?.stage ?? "");
+
+  if (PROPOSAL_STAGES.has(stage)) {
+    return markDone(supabase, job.id, "cancelled", "proposal_stage_no_followup");
+  }
+
+  const nextAppointment = context.leads
+    ? await getNextAppointment(supabase, context.organization_id, context.leads.id)
+    : null;
+
+  if (nextAppointment && new Date(nextAppointment.starts_at).getTime() - Date.now() > 10 * 24 * 60 * 60_000) {
+    return markDone(supabase, job.id, "cancelled", "future_visit_scheduled_confirmation_only");
+  }
+
+  const message = buildProgressMessage(stage, Boolean(nextAppointment));
+  await notifyBroker(supabase, context, message);
   await supabase.from("broker_assignments").update({ last_progress_check_at: new Date().toISOString() }).eq("id", context.id);
 
   if (job.payload.recurring) {
@@ -176,6 +193,10 @@ export async function processBrokerNoResponseReclaim(supabase: SupabaseClient, j
     return markDone(supabase, job.id, "cancelled", "broker_responded");
   }
 
+  if (isVisitOrLater(context.leads?.stage)) {
+    return markDone(supabase, job.id, "cancelled", "after_visit_stage_no_auto_transfer");
+  }
+
   await reclaimLeadToAdmin(supabase, context, "Corretor ficou mais de 5 dias sem responder a IA.");
   return markDone(supabase, job.id, "done", "lead_reclaimed_no_broker_response");
 }
@@ -189,6 +210,10 @@ export async function processLeadStaleReassignment(supabase: SupabaseClient, job
   const lastUpdate = new Date(context.leads?.last_broker_response_at || context.leads?.last_stage_updated_at || context.assigned_at).getTime();
   if (Date.now() - lastUpdate < 15 * 24 * 60 * 60_000) {
     return markDone(supabase, job.id, "cancelled", "lead_recently_updated");
+  }
+
+  if (isVisitOrLater(context.leads?.stage)) {
+    return markDone(supabase, job.id, "cancelled", "after_visit_stage_no_auto_transfer");
   }
 
   await reclaimLeadToAdmin(supabase, context, "Lead ficou mais de 15 dias sem atualizacao no sistema.");
@@ -277,7 +302,106 @@ export async function processAppointmentPostVisitCheck(supabase: SupabaseClient,
     });
   }
   await supabase.from("appointments").update({ broker_post_visit_checked_at: new Date().toISOString() }).eq("id", job.target_id);
+  await schedulePostVisitFollowup({
+    supabase,
+    appointmentId: job.target_id,
+    organizationId: appointment.organization_id,
+    runAt: new Date(Date.now() + 30 * 60_000).toISOString(),
+    attempt: 1
+  });
   return markDone(supabase, job.id, "done", "post_visit_checked");
+}
+
+export async function processAppointmentPostVisitFollowup(supabase: SupabaseClient, job: JobLike) {
+  if (!job.target_id) return markDone(supabase, job.id, "cancelled", "missing_appointment");
+
+  const attempt = Number(job.payload.attempt ?? 1);
+  const { data: appointment } = await supabase
+    .from("appointments")
+    .select("id, organization_id, lead_id, broker_post_visit_checked_at")
+    .eq("id", job.target_id)
+    .maybeSingle<{
+      id: string;
+      organization_id: string;
+      lead_id: string | null;
+      broker_post_visit_checked_at: string | null;
+    }>();
+
+  if (!appointment?.lead_id || !appointment.broker_post_visit_checked_at) {
+    return markDone(supabase, job.id, "cancelled", "missing_post_visit_context");
+  }
+
+  const { data: assignment } = await supabase
+    .from("broker_assignments")
+    .select("id, organization_id, leads(id, name, phone, summary, last_broker_response_at), brokers(name, phone)")
+    .eq("lead_id", appointment.lead_id)
+    .order("assigned_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{
+      id: string;
+      organization_id: string;
+      leads: { id: string; name: string | null; phone: string; summary: string | null; last_broker_response_at: string | null } | null;
+      brokers: { name: string; phone: string } | null;
+    }>();
+
+  const lastBrokerResponseAt = assignment?.leads?.last_broker_response_at
+    ? new Date(assignment.leads.last_broker_response_at).getTime()
+    : 0;
+  const checkedAt = new Date(appointment.broker_post_visit_checked_at).getTime();
+
+  if (lastBrokerResponseAt > checkedAt) {
+    return markDone(supabase, job.id, "cancelled", "broker_answered_post_visit");
+  }
+
+  if (attempt >= 3) {
+    await notifyAdmin(
+      supabase,
+      appointment.organization_id,
+      `Cristiana, o corretor nao respondeu sobre a visita do lead ${assignment?.leads?.name ?? assignment?.leads?.phone ?? "sem nome"} mesmo apos as cobrancas.\n\nSugestao: assumir ou redistribuir o atendimento.`
+    );
+    await supabase
+      .from("leads")
+      .update({
+        stage: "no_response",
+        last_stage_updated_at: new Date().toISOString(),
+        lost_reason: "Corretor nao respondeu cobrancas pos-visita em ate 2 dias."
+      })
+      .eq("id", appointment.lead_id);
+    return markDone(supabase, job.id, "done", "post_visit_escalated_to_admin");
+  }
+
+  if (assignment?.brokers?.phone) {
+    const waitLabel = attempt === 1 ? "30 minutos" : "2 horas";
+    const config = await getActiveIntegrationConfig(supabase, appointment.organization_id, "uazapi");
+    await sendUazapiMessage({
+      phone: assignment.brokers.phone,
+      text: `Ola, ${assignment.brokers.name}. Ainda preciso da atualizacao da visita do lead ${assignment.leads?.name ?? assignment.leads?.phone ?? ""}. Teve proposta, negociacao ou proximo passo?`,
+      integrationConfig: {
+        baseUrl: configString(config, ["baseUrl", "base_url"], process.env.UAZAPI_BASE_URL) ?? undefined,
+        token: configString(config, ["token", "apiKey", "api_key"], process.env.UAZAPI_TOKEN) ?? undefined
+      }
+    });
+    await supabase.from("integration_logs").insert({
+      organization_id: appointment.organization_id,
+      provider: "uazapi",
+      target_type: "post_visit_followup",
+      target_id: appointment.id,
+      status: "sent",
+      request_payload: { attempt, waitLabel },
+      response_payload: {},
+      error_message: null
+    });
+  }
+
+  await schedulePostVisitFollowup({
+    supabase,
+    appointmentId: appointment.id,
+    organizationId: appointment.organization_id,
+    runAt: new Date(Date.now() + (attempt === 1 ? 2 * 60 : 2 * 24 * 60) * 60_000).toISOString(),
+    attempt: attempt + 1
+  });
+
+  return markDone(supabase, job.id, "done", `post_visit_followup_${attempt}`);
 }
 
 export async function processManualReminder(supabase: SupabaseClient, job: JobLike) {
@@ -332,6 +456,21 @@ async function getAssignmentContextByLead(supabase: SupabaseClient, job: JobLike
     .order("assigned_at", { ascending: false })
     .limit(1)
     .maybeSingle<AssignmentContext>();
+  return data ?? null;
+}
+
+async function getNextAppointment(supabase: SupabaseClient, organizationId: string, leadId: string) {
+  const { data } = await supabase
+    .from("appointments")
+    .select("id, starts_at")
+    .eq("organization_id", organizationId)
+    .eq("lead_id", leadId)
+    .gte("starts_at", new Date().toISOString())
+    .not("status", "eq", "cancelled")
+    .order("starts_at", { ascending: true })
+    .limit(1)
+    .maybeSingle<{ id: string; starts_at: string }>();
+
   return data ?? null;
 }
 
@@ -436,4 +575,42 @@ function normalizeStage(stage: string) {
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .replace(/\s+/g, "_");
+}
+
+function isVisitOrLater(stage?: string | null) {
+  return VISIT_OR_LATER_STAGES.has(normalizeStage(stage ?? ""));
+}
+
+function buildProgressMessage(stage: string, hasAppointment: boolean) {
+  if (stage === "visit" || stage === "visita") {
+    return hasAppointment
+      ? `Ola, {{broker_name}}. A visita do lead {{lead_name}} esta no radar.\n\nDepois me atualize se gerou proposta ou negociacao.`
+      : `Ola, {{broker_name}}. O lead {{lead_name}} esta na etapa de visita.\n\nPara quando ficou agendada a visita? Me responda com data e horario para eu acompanhar.`;
+  }
+
+  return `Ola, {{broker_name}}. Como esta o atendimento do lead {{lead_name}}?\n\nTeve visita, proposta ou alguma atualizacao de funil? Me responda aqui para eu atualizar o sistema.`;
+}
+
+async function schedulePostVisitFollowup({
+  supabase,
+  appointmentId,
+  organizationId,
+  runAt,
+  attempt
+}: {
+  supabase: SupabaseClient;
+  appointmentId: string;
+  organizationId: string;
+  runAt: string;
+  attempt: number;
+}) {
+  await supabase.from("scheduled_jobs").insert({
+    organization_id: organizationId,
+    job_type: "appointment_post_visit_followup",
+    target_id: appointmentId,
+    status: "pending",
+    run_at: runAt,
+    payload: { attempt }
+  });
+  await publishJobProcessor({ runAt, reason: "appointment_post_visit_followup" }).catch(() => null);
 }

@@ -4,6 +4,7 @@ import { syncHauzappProspectionLeads } from "@/services/hauzapp/prospection-sync
 import { sendQualifiedLeadToHauzapp } from "@/services/hauzapp/workflow";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
+  processAppointmentPostVisitFollowup,
   processAppointmentPostVisitCheck,
   processAppointmentReminder,
   processBrokerInitialCheck,
@@ -171,6 +172,12 @@ async function processJobs(request: Request) {
 
       if (job.job_type === "appointment_post_visit_check") {
         const result = await processAppointmentPostVisitCheck(supabase, job);
+        results.push({ id: job.id, ...result });
+        continue;
+      }
+
+      if (job.job_type === "appointment_post_visit_followup") {
+        const result = await processAppointmentPostVisitFollowup(supabase, job);
         results.push({ id: job.id, ...result });
         continue;
       }

@@ -87,29 +87,31 @@ export async function POST(request: Request) {
 
   const { data: assignment } = await supabase
     .from("broker_assignments")
-    .select("id, lead_id")
+    .select("id, lead_id, status, responded_at")
     .eq("organization_id", broker.organization_id)
     .eq("broker_id", broker.id)
-    .eq("status", "assigned")
+    .in("status", ["assigned", "accepted", "no_response"])
     .order("assigned_at", { ascending: false })
     .limit(1)
-    .maybeSingle<{ id: string; lead_id: string }>();
+    .maybeSingle<{ id: string; lead_id: string; status: string; responded_at: string | null }>();
 
   if (!assignment) {
     return NextResponse.json({ processed: false });
   }
 
   const now = new Date().toISOString();
+  const firstBrokerReply = assignment.status === "assigned" || !assignment.responded_at;
+  const stage = inferBrokerStage(text);
 
   await Promise.all([
     supabase
       .from("broker_assignments")
-      .update({ status: "accepted", responded_at: now })
+      .update({ status: "accepted", responded_at: assignment.responded_at ?? now })
       .eq("id", assignment.id),
     supabase
       .from("leads")
       .update({
-        stage: "broker_attending",
+        stage,
         last_stage_updated_at: now,
         last_broker_response_at: now
       })
@@ -125,15 +127,17 @@ export async function POST(request: Request) {
     })
   ]);
 
-  await scheduleBrokerProgressChecks({
-    supabase,
-    organizationId: broker.organization_id,
-    assignmentId: assignment.id,
-    leadId: assignment.lead_id,
-    brokerId: broker.id
-  });
+  if (firstBrokerReply) {
+    await scheduleBrokerProgressChecks({
+      supabase,
+      organizationId: broker.organization_id,
+      assignmentId: assignment.id,
+      leadId: assignment.lead_id,
+      brokerId: broker.id
+    });
+  }
 
-  return NextResponse.json({ processed: true });
+  return NextResponse.json({ processed: true, firstBrokerReply, stage });
 }
 
 async function resolveLeadOrganization(
@@ -237,6 +241,14 @@ async function processAdminMessage({
 }
 
 function inferAdminStage(text: string) {
+  return inferStageFromText(text, false);
+}
+
+function inferBrokerStage(text: string) {
+  return inferStageFromText(text, true) ?? "broker_attending";
+}
+
+function inferStageFromText(text: string, fallbackToAttending: boolean) {
   const normalized = text
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -249,6 +261,8 @@ function inferAdminStage(text: string) {
   if (normalized.includes("cliente quente") || normalized.includes("quente")) return "cliente_quente";
   if (normalized.includes("reaquecer")) return "reaquecer";
   if (normalized.includes("atendimento")) return "broker_attending";
+  if (normalized.includes("iniciei") || normalized.includes("iniciado")) return "broker_attending";
+  if (normalized.includes("contato") || normalized.includes("falei")) return "broker_attending";
 
-  return null;
+  return fallbackToAttending ? "broker_attending" : null;
 }
