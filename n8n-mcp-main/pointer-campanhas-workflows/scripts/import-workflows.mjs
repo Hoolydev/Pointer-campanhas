@@ -15,6 +15,11 @@ const files = (await readdir(workflowDir)).filter((file) => file.endsWith(".json
 
 for (const file of files) {
   const workflow = JSON.parse(await readFile(join(workflowDir, file), "utf8"));
+  delete workflow.id;
+  delete workflow.active;
+  delete workflow.createdAt;
+  delete workflow.updatedAt;
+  delete workflow.versionId;
   const response = await fetch(`${baseUrl}/api/v1/workflows`, {
     method: "POST",
     headers: {
