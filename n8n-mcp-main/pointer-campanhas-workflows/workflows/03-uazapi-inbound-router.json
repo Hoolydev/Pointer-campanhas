@@ -16,7 +16,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const payload = $json.body || $json;\nconst phone = String(payload.phone || payload.from || '').replace(/\\D/g, '');\nreturn [{ json: { payload, phone, text: payload.text || payload.message || '' } }];"
+        "jsCode": "const payload = $json.body || $json;\nconst phone = String(payload.phone || payload.from || payload.sender || '').replace(/\\D/g, '');\nconst text = payload.text || payload.message || payload.body || payload.content || '';\nconst externalMessageId = payload.id || payload.messageId || payload.message_id || payload.key?.id || null;\nreturn [{ json: { channel: 'uazapi', phone, text, contactName: payload.name || payload.pushName || payload.contactName || null, externalMessageId, payload } }];"
       },
       "id": "normalize-uazapi",
       "name": "Normalize Uazapi Payload",
@@ -27,7 +27,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "__POINTER_APP_URL__/api/webhooks/uazapi",
+        "url": "__N8N_PUBLIC_WEBHOOK_BASE__/webhook/pointer/lead-ai-brain",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -36,11 +36,11 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{$json.payload}}",
+        "jsonBody": "={{$json}}",
         "options": {}
       },
       "id": "forward-to-app-uazapi",
-      "name": "Forward To Pointer Uazapi Handler",
+      "name": "Forward To Lead AI Brain",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [-260, 0]
@@ -59,8 +59,8 @@
   ],
   "connections": {
     "Webhook Uazapi Inbound": { "main": [[{ "node": "Normalize Uazapi Payload", "type": "main", "index": 0 }]] },
-    "Normalize Uazapi Payload": { "main": [[{ "node": "Forward To Pointer Uazapi Handler", "type": "main", "index": 0 }]] },
-    "Forward To Pointer Uazapi Handler": { "main": [[{ "node": "Respond Uazapi OK", "type": "main", "index": 0 }]] }
+    "Normalize Uazapi Payload": { "main": [[{ "node": "Forward To Lead AI Brain", "type": "main", "index": 0 }]] },
+    "Forward To Lead AI Brain": { "main": [[{ "node": "Respond Uazapi OK", "type": "main", "index": 0 }]] }
   },
   "settings": { "executionOrder": "v1", "saveExecutionProgress": true },
   "active": false

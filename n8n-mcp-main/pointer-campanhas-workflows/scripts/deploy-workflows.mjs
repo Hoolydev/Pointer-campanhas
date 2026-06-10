@@ -1,6 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 loadDotEnv(resolve("../../.env.local"));
 loadDotEnv(resolve("../../.env.vercel.tmp"));
@@ -16,11 +17,13 @@ if (!baseUrl || !apiKey) {
 const values = buildMaterializedValues();
 
 const workflowDir = resolve("workflows");
-const files = (await readdir(workflowDir)).filter((file) => file.endsWith(".json")).sort();
+const files = (await readdir(workflowDir))
+  .filter((file) => file.endsWith(".json") || file.endsWith(".mjs"))
+  .sort();
 const existing = await listWorkflows();
 
 for (const file of files) {
-  const original = JSON.parse(await readFile(join(workflowDir, file), "utf8"));
+  const original = await loadWorkflow(join(workflowDir, file));
   const workflow = sanitizeWorkflow(materialize(original, values));
   const current = existing.find((item) => item.name === workflow.name);
   const method = current ? "PUT" : "POST";
@@ -50,6 +53,16 @@ for (const file of files) {
   }
 
   console.log(`${current ? "Atualizado" : "Importado"}: ${workflow.name} (${payload.id})`);
+}
+
+async function loadWorkflow(path) {
+  if (path.endsWith(".mjs")) {
+    const moduleUrl = `${pathToFileURL(path).href}?v=${Date.now()}`;
+    const module = await import(moduleUrl);
+    return module.default;
+  }
+
+  return JSON.parse(await readFile(path, "utf8"));
 }
 
 async function listWorkflows() {
@@ -125,15 +138,22 @@ function buildMaterializedValues() {
     process.env.APP_URL ||
     process.env.NEXT_PUBLIC_APP_URL ||
     "https://pointer-campanhas.vercel.app";
+  const n8nPublicWebhookBase =
+    process.env.N8N_PUBLIC_WEBHOOK_BASE ||
+    process.env.N8N_BASE_URL ||
+    "https://n8n.growthailabs.com.br";
 
   return {
     POINTER_APP_URL: pointerAppUrl.replace(/\/$/, ""),
+    N8N_PUBLIC_WEBHOOK_BASE: n8nPublicWebhookBase.replace(/\/$/, ""),
     POINTER_N8N_WEBHOOK_SECRET:
       process.env.POINTER_N8N_WEBHOOK_SECRET ||
       process.env.N8N_WEBHOOK_SECRET ||
       process.env.TRIGGER_SECRET_KEY ||
       process.env.CRON_SECRET ||
       "",
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY || "",
+    OPENAI_MODEL: process.env.OPENAI_MODEL || "gpt-5-mini",
     SUPABASE_URL: process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "",
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
     N8N_POSTGRES_CREDENTIAL_ID:
@@ -141,7 +161,9 @@ function buildMaterializedValues() {
     N8N_POSTGRES_CREDENTIAL_NAME:
       process.env.N8N_POSTGRES_CREDENTIAL_NAME || "Pointer Supabase Postgres",
     META_ACCESS_TOKEN: process.env.META_ACCESS_TOKEN || "",
-    META_PHONE_NUMBER_ID: process.env.META_PHONE_NUMBER_ID || ""
+    META_PHONE_NUMBER_ID: process.env.META_PHONE_NUMBER_ID || "",
+    UAZAPI_BASE_URL: process.env.UAZAPI_BASE_URL || "",
+    UAZAPI_TOKEN: process.env.UAZAPI_TOKEN || ""
   };
 }
 

@@ -16,25 +16,34 @@
     },
     {
       "parameters": {
+        "jsCode": "const body = $json.body || $json;\nconst value = body.entry?.[0]?.changes?.[0]?.value || body.value || body;\nconst message = value.messages?.[0];\nif (!message) {\n  return [{ json: { channel: 'meta', ignored: true, reason: 'no_inbound_message', payload: body } }];\n}\nconst text = message.text?.body || message.button?.text || message.interactive?.button_reply?.title || message.interactive?.list_reply?.title || message.image?.caption || message.document?.caption || message.audio?.caption || '';\nconst contactName = value.contacts?.[0]?.profile?.name || null;\nreturn [{ json: { channel: 'meta', phone: message.from, text, contactName, externalMessageId: message.id, payload: body } }];"
+      },
+      "id": "normalize-meta-inbound",
+      "name": "Normalize Meta Inbound",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-500, 0]
+    },
+    {
+      "parameters": {
         "method": "POST",
-        "url": "__POINTER_APP_URL__/api/webhooks/meta",
+        "url": "__N8N_PUBLIC_WEBHOOK_BASE__/webhook/pointer/lead-ai-brain",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Content-Type", "value": "application/json" },
-            { "name": "Authorization", "value": "Bearer __POINTER_N8N_WEBHOOK_SECRET__" }
+            { "name": "Content-Type", "value": "application/json" }
           ]
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{$json.body || $json}}",
+        "jsonBody": "={{$json}}",
         "options": {}
       },
       "id": "forward-to-app-meta",
-      "name": "Forward To Pointer Meta Handler",
+      "name": "Forward To Lead AI Brain",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [-460, 0]
+      "position": [-260, 0]
     },
     {
       "parameters": {
@@ -49,8 +58,9 @@
     }
   ],
   "connections": {
-    "Webhook Meta Inbound": { "main": [[{ "node": "Forward To Pointer Meta Handler", "type": "main", "index": 0 }]] },
-    "Forward To Pointer Meta Handler": { "main": [[{ "node": "Respond Meta OK", "type": "main", "index": 0 }]] }
+    "Webhook Meta Inbound": { "main": [[{ "node": "Normalize Meta Inbound", "type": "main", "index": 0 }]] },
+    "Normalize Meta Inbound": { "main": [[{ "node": "Forward To Lead AI Brain", "type": "main", "index": 0 }]] },
+    "Forward To Lead AI Brain": { "main": [[{ "node": "Respond Meta OK", "type": "main", "index": 0 }]] }
   },
   "settings": { "executionOrder": "v1", "saveExecutionProgress": true },
   "active": false
