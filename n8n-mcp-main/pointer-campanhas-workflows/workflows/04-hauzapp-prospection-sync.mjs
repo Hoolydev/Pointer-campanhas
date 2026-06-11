@@ -31,8 +31,20 @@ function isProspection(item) {
   return stageId === configuredId || stageName.includes("prospeccao") || stageName.includes("prospec");
 }
 
-const body = $json;
-const details = Array.isArray(body.details) ? body.details : [];
+function parseDetails(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== "string" || value === "null" || value.trim() === "") return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+const rawBody = $json.data || $json;
+const body = typeof rawBody === "string" ? JSON.parse(rawBody) : rawBody;
+const details = parseDetails(body.details);
 const selected = details
   .filter(isProspection)
   .map((item) => ({ ...item, pointer_phone: normalizePhone(item.clienteTelefone) }))
