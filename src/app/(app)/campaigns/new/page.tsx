@@ -22,7 +22,7 @@ type WhatsappInstanceOption = {
 export default async function NewCampaignPage() {
   const supabase = await createClient();
   const { profile } = await getCurrentProfile(supabase);
-  const [{ data: agents }, { data: uazapiInstances }] = profile
+  const [{ data: agents }, { data: uazapiInstances }, reusableContacts] = profile
     ? await Promise.all([
         supabase
           .from("ai_agents")
@@ -39,9 +39,14 @@ export default async function NewCampaignPage() {
           .eq("provider", "uazapi")
           .eq("active", true)
           .order("send_order", { ascending: true })
-          .returns<WhatsappInstanceOption[]>()
+          .returns<WhatsappInstanceOption[]>(),
+        supabase
+          .from("contacts")
+          .select("*", { count: "exact", head: true })
+          .eq("organization_id", profile.organization_id)
+          .in("status", ["pending", "queued", "failed"])
       ])
-    : [{ data: [] }, { data: [] }];
+    : [{ data: [] }, { data: [] }, { count: 0 }];
   const [metaPhone, metaTemplates] = await Promise.all([
     withTimeout(getMetaPhoneStatus(), 1500, {
       data: null,
@@ -62,6 +67,7 @@ export default async function NewCampaignPage() {
       <CampaignForm
         agents={agents ?? []}
         uazapiInstances={uazapiInstances ?? []}
+        reusableContactsCount={reusableContacts.count ?? 0}
         metaPhone={metaPhone}
         metaTemplates={metaTemplates}
       />

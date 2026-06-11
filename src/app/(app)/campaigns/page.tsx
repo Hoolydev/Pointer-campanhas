@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/page-header";
 import { getCurrentProfile } from "@/lib/auth/organization";
 import { createClient } from "@/lib/supabase/server";
 import { DeleteCampaignButton } from "./[id]/delete-campaign-button";
+import { CleanupOutboundButton } from "./cleanup-outbound-button";
 
 type CampaignRow = {
   id: string;
@@ -48,6 +49,7 @@ export default async function CampaignsPage() {
         description="Lista de campanhas imobiliarias e status dos disparos."
         action={
           <div className="flex gap-2">
+            <CleanupOutboundButton />
             <Link
               href="/campaigns/test"
               className="inline-flex h-10 items-center gap-2 rounded-md border bg-white px-4 text-sm font-semibold text-slate-800"

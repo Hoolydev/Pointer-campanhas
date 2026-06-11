@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import type { Route } from "next";
 import { z } from "zod";
 import { getCurrentProfile } from "@/lib/auth/organization";
-import { parseContactsFile } from "@/lib/import/contacts";
+import { parseContactsFile, parseManualContactsText, type ContactsImportResult, type ImportedContact } from "@/lib/import/contacts";
 import { createClient } from "@/lib/supabase/server";
 import { inferMetaHeaderMediaType, uploadMetaMedia } from "@/services/meta/upload-media";
 
@@ -25,6 +25,9 @@ const campaignSchema = z
     send_interval_max_seconds: z.coerce.number().int().min(10).max(7200).default(240),
     uazapi_instance_strategy: z.enum(["round_robin", "least_recent"]).default("round_robin"),
     uazapi_instance_ids: z.array(z.string().uuid()).max(5).default([]),
+    contact_source: z.enum(["file", "manual", "existing_unsent"]).default("file"),
+    contacts_text: z.string().optional(),
+    reuse_contact_limit: z.coerce.number().int().min(1).max(20000).default(10000),
     initial_message: z.string().optional(),
     meta_template_name: z.string().optional(),
     meta_template_language: z.string().min(2).default("pt_BR"),
@@ -82,6 +85,9 @@ export async function createCampaignAction(
     send_interval_max_seconds: formData.get("send_interval_max_seconds") || 240,
     uazapi_instance_strategy: formData.get("uazapi_instance_strategy") || "round_robin",
     uazapi_instance_ids: formData.getAll("uazapi_instance_ids"),
+    contact_source: formData.get("contact_source") || "file",
+    contacts_text: formData.get("contacts_text") || undefined,
+    reuse_contact_limit: formData.get("reuse_contact_limit") || 10000,
     initial_message: formData.get("initial_message") || undefined,
     meta_template_name: formData.get("meta_template_name") || undefined,
     meta_template_language: formData.get("meta_template_language") || "pt_BR",
@@ -108,29 +114,31 @@ export async function createCampaignAction(
     return { error: "O intervalo maximo precisa ser maior ou igual ao minimo." };
   }
 
-  const file = formData.get("contacts_file");
-
-  if (!(file instanceof File) || file.size === 0) {
-    return { error: "Envie uma planilha CSV ou XLSX com os contatos." };
-  }
-
-  let importResult;
-
-  try {
-    importResult = await parseContactsFile(file);
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : "Nao foi possivel ler a planilha." };
-  }
-
-  if (importResult.contacts.length === 0) {
-    return { error: "Nenhum contato com telefone valido foi encontrado na planilha." };
-  }
-
   const supabase = await createClient();
   const { profile, error: profileError } = await getCurrentProfile(supabase);
 
   if (!profile) {
     return { error: profileError };
+  }
+
+  const contactsFile = formData.get("contacts_file");
+  let importResult: ContactsImportResult;
+
+  try {
+    importResult = await resolveCampaignContacts({
+      supabase,
+      organizationId: profile.organization_id,
+      source: parsed.data.contact_source,
+      file: contactsFile,
+      manualText: parsed.data.contacts_text,
+      limit: parsed.data.reuse_contact_limit
+    });
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Nao foi possivel preparar os contatos." };
+  }
+
+  if (importResult.contacts.length === 0) {
+    return { error: "Nenhum contato valido foi encontrado para esta campanha." };
   }
 
   const headerFile = formData.get("meta_header_media_file");
@@ -205,6 +213,7 @@ export async function createCampaignAction(
       property_description: `Campanha criada com o agente selecionado e canal ${parsed.data.dispatch_channel}.
 
 Importacao:
+- Origem dos contatos: ${contactSourceLabel(parsed.data.contact_source)}
 - Linhas lidas: ${importResult.totalRows}
 - Contatos validos importados: ${importResult.importedRows}
 - Numeros invalidos/sem DDD: ${importResult.invalidRows}
@@ -250,11 +259,13 @@ Importacao:
     }
   }
 
-  const storagePath = `${profile.organization_id}/${campaign.id}/${Date.now()}-${sanitizeFileName(file.name)}`;
-  await supabase.storage.from("campaign-imports").upload(storagePath, file, {
-    contentType: file.type || "application/octet-stream",
-    upsert: true
-  });
+  if (contactsFile instanceof File && contactsFile.size > 0) {
+    const storagePath = `${profile.organization_id}/${campaign.id}/${Date.now()}-${sanitizeFileName(contactsFile.name)}`;
+    await supabase.storage.from("campaign-imports").upload(storagePath, contactsFile, {
+      contentType: contactsFile.type || "application/octet-stream",
+      upsert: true
+    });
+  }
 
   const { error: contactsError } = await supabase.from("contacts").insert(
     importResult.contacts.map((contact) => ({
@@ -274,6 +285,139 @@ Importacao:
   revalidatePath("/dashboard");
   revalidatePath("/campaigns");
   redirect(`/campaigns/${campaign.id}` as Route);
+}
+
+async function resolveCampaignContacts({
+  supabase,
+  organizationId,
+  source,
+  file,
+  manualText,
+  limit
+}: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  organizationId: string;
+  source: z.infer<typeof campaignSchema>["contact_source"];
+  file: FormDataEntryValue | null;
+  manualText?: string;
+  limit: number;
+}) {
+  if (source === "file") {
+    if (!(file instanceof File) || file.size === 0) {
+      throw new Error("Envie uma planilha CSV ou XLSX com os contatos.");
+    }
+
+    return parseContactsFile(file);
+  }
+
+  if (source === "manual") {
+    if (!manualText?.trim()) {
+      throw new Error("Cole ao menos um nome e telefone para criar a campanha.");
+    }
+
+    return parseManualContactsText(manualText);
+  }
+
+  return loadReusableContacts({ supabase, organizationId, limit });
+}
+
+async function loadReusableContacts({
+  supabase,
+  organizationId,
+  limit
+}: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  organizationId: string;
+  limit: number;
+}): Promise<ContactsImportResult> {
+  const { data: sentMessages, error: sentMessagesError } = await supabase
+    .from("messages")
+    .select("contact_id")
+    .eq("organization_id", organizationId)
+    .eq("direction", "outbound")
+    .eq("status", "sent")
+    .not("contact_id", "is", null)
+    .limit(100000)
+    .returns<Array<{ contact_id: string | null }>>();
+
+  if (sentMessagesError) {
+    throw new Error(sentMessagesError.message);
+  }
+
+  const alreadySentContactIds = new Set(
+    (sentMessages ?? [])
+      .map((message) => message.contact_id)
+      .filter((contactId): contactId is string => Boolean(contactId))
+  );
+
+  const { data: contacts, error: contactsError } = await supabase
+    .from("contacts")
+    .select("id, campaign_id, name, phone, raw_data, status")
+    .eq("organization_id", organizationId)
+    .in("status", ["pending", "queued", "failed"])
+    .order("created_at", { ascending: true })
+    .limit(limit)
+    .returns<
+      Array<{
+        id: string;
+        campaign_id: string | null;
+        name: string | null;
+        phone: string;
+        raw_data: Record<string, unknown> | null;
+        status: string;
+      }>
+    >();
+
+  if (contactsError) {
+    throw new Error(contactsError.message);
+  }
+
+  const uniquePhones = new Set<string>();
+  const reusableContacts: ImportedContact[] = [];
+  let duplicateRows = 0;
+
+  for (const contact of contacts ?? []) {
+    if (alreadySentContactIds.has(contact.id)) {
+      continue;
+    }
+
+    if (uniquePhones.has(contact.phone)) {
+      duplicateRows += 1;
+      continue;
+    }
+
+    uniquePhones.add(contact.phone);
+    reusableContacts.push({
+      name: contact.name,
+      phone: contact.phone,
+      raw_data: {
+        ...(contact.raw_data ?? {}),
+        reused_from_contact_id: contact.id,
+        reused_from_campaign_id: contact.campaign_id,
+        reused_from_status: contact.status
+      }
+    });
+  }
+
+  return {
+    contacts: reusableContacts,
+    totalRows: contacts?.length ?? 0,
+    importedRows: reusableContacts.length,
+    invalidRows: 0,
+    duplicateRows
+  };
+}
+
+function contactSourceLabel(source: z.infer<typeof campaignSchema>["contact_source"]) {
+  if (source === "existing_unsent") {
+    return "Contatos antigos sem mensagem enviada";
+  }
+
+  if (source === "manual") {
+    return "Lista colada manualmente";
+  }
+
+  return "Planilha CSV/XLSX";
 }
 
 export async function createInboundCampaignAction(

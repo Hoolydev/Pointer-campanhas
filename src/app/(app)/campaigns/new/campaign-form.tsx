@@ -41,6 +41,7 @@ type WhatsappInstanceOption = {
 };
 
 type Mode = "outbound" | "inbound";
+type ContactSource = "file" | "existing_unsent" | "manual";
 
 const MAX_ROUTE_UPLOAD_BYTES = 4 * 1024 * 1024;
 
@@ -55,17 +56,20 @@ const stageOptions = [
 export function CampaignForm({
   agents,
   uazapiInstances,
+  reusableContactsCount,
   metaPhone,
   metaTemplates
 }: {
   agents: AgentOption[];
   uazapiInstances: WhatsappInstanceOption[];
+  reusableContactsCount: number;
   metaPhone: MetaPhoneResult;
   metaTemplates: MetaTemplatesResult;
 }) {
   const [mode, setMode] = useState<Mode>("outbound");
   const [step, setStep] = useState(0);
   const [channel, setChannel] = useState<"meta" | "uazapi">("meta");
+  const [contactSource, setContactSource] = useState<ContactSource>("file");
   const [selectedInstances, setSelectedInstances] = useState<string[]>([]);
   const [clientError, setClientError] = useState<string | null>(null);
   const [outboundState, outboundAction, outboundPending] = useActionState(createCampaignAction, null);
@@ -196,6 +200,9 @@ export function CampaignForm({
                     selectedInstances={selectedInstances}
                     toggleInstance={toggleInstance}
                     selectedCapacity={selectedCapacity}
+                    contactSource={contactSource}
+                    setContactSource={setContactSource}
+                    reusableContactsCount={reusableContactsCount}
                   />
                 </div>
               ))}
@@ -273,7 +280,10 @@ function OutboundStep({
   uazapiInstances,
   selectedInstances,
   toggleInstance,
-  selectedCapacity
+  selectedCapacity,
+  contactSource,
+  setContactSource,
+  reusableContactsCount
 }: {
   step: number;
   channel: "meta" | "uazapi";
@@ -286,6 +296,9 @@ function OutboundStep({
   selectedInstances: string[];
   toggleInstance: (id: string) => void;
   selectedCapacity: number;
+  contactSource: ContactSource;
+  setContactSource: (source: ContactSource) => void;
+  reusableContactsCount: number;
 }) {
   if (step === 1) {
     return (
@@ -400,20 +413,70 @@ function OutboundStep({
             </>
           )}
           <section className="rounded-md border bg-slate-50 p-4">
-            <div className="flex items-center gap-3">
-              <UploadCloud className="h-5 w-5 text-slate-600" />
-              <div>
-                <p className="text-sm font-semibold text-slate-950">Planilha de contatos</p>
-                <p className="text-xs text-muted-foreground">CSV ou XLSX com nome e telefone com DDD.</p>
+            <div className="flex items-start gap-3">
+              <UploadCloud className="mt-0.5 h-5 w-5 text-slate-600" />
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-slate-950">Origem dos contatos</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Escolha se vai subir uma nova lista ou reaproveitar contatos antigos que ainda nao receberam mensagem.
+                </p>
               </div>
             </div>
-            <input
-              name="contacts_file"
-              type="file"
-              accept=".csv,.xlsx,.xls"
-              required
-              className="mt-4 block w-full rounded-md border bg-white px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium"
-            />
+            <input type="hidden" name="contact_source" value={contactSource} />
+
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              <ChoiceCard
+                active={contactSource === "file"}
+                title="Nova planilha"
+                description="CSV ou XLSX com nome e telefone."
+                onClick={() => setContactSource("file")}
+              />
+              <ChoiceCard
+                active={contactSource === "existing_unsent"}
+                title="Base antiga"
+                description={`${reusableContactsCount} contato(s) em pending/queued/failed.`}
+                onClick={() => setContactSource("existing_unsent")}
+              />
+              <ChoiceCard
+                active={contactSource === "manual"}
+                title="Colar contatos"
+                description="Bom para testes pequenos."
+                onClick={() => setContactSource("manual")}
+              />
+            </div>
+
+            {contactSource === "file" ? (
+              <input
+                name="contacts_file"
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                required
+                className="mt-4 block w-full rounded-md border bg-white px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium"
+              />
+            ) : null}
+
+            {contactSource === "existing_unsent" ? (
+              <div className="mt-4 grid gap-3 md:grid-cols-[220px_1fr]">
+                <Field
+                  label="Quantidade maxima"
+                  name="reuse_contact_limit"
+                  placeholder="10000"
+                  defaultValue={String(Math.min(Math.max(reusableContactsCount, 1), 20000))}
+                />
+                <div className="rounded-md border bg-white px-4 py-3 text-sm leading-6 text-muted-foreground">
+                  O sistema vai copiar para esta campanha apenas contatos antigos sem mensagem outbound marcada como enviada.
+                </div>
+              </div>
+            ) : null}
+
+            {contactSource === "manual" ? (
+              <TextArea
+                label="Contatos"
+                name="contacts_text"
+                placeholder={"Silfarney, 62982540748\nMaria, 62999998888"}
+                rows={6}
+              />
+            ) : null}
           </section>
         </section>
         <SideNote
