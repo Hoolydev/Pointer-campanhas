@@ -163,7 +163,11 @@ function buildMaterializedValues() {
     META_ACCESS_TOKEN: process.env.META_ACCESS_TOKEN || "",
     META_PHONE_NUMBER_ID: process.env.META_PHONE_NUMBER_ID || "",
     UAZAPI_BASE_URL: process.env.UAZAPI_BASE_URL || "",
-    UAZAPI_TOKEN: process.env.UAZAPI_TOKEN || ""
+    UAZAPI_TOKEN: process.env.UAZAPI_TOKEN || "",
+    HAUZAPP_BASE_URL:
+      process.env.HAUZAPP_BASE_URL || "https://hauzhub.com.br/requisicao/api/integracao.php",
+    HAUZAPP_API_KEY: process.env.HAUZAPP_API_KEY || "",
+    HAUZAPP_PROSPECTION_STAGE_ID: process.env.HAUZAPP_PROSPECTION_STAGE_ID || "0"
   };
 }
 

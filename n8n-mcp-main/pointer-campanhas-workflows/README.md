@@ -45,7 +45,7 @@ Os tokens Uazapi e instancias ficam no Supabase, cadastrados pelo front em `/set
 - `01-campaign-dispatch-router.json`: recebe campanha do front, busca contatos pendentes, escolhe Meta ou Uazapi, alterna ate 5 instancias e envia com delay humanizado.
 - `02-meta-inbound-lead-agent.json`: recebe webhook Meta, normaliza a mensagem inbound e envia para o cerebro `07`.
 - `03-uazapi-inbound-router.json`: recebe Uazapi, normaliza telefone/texto e envia para o cerebro `07`.
-- `04-hauzapp-prospection-sync.json`: busca negocios do HauzApp em Prospecção e importa para o CRM.
+- `04-hauzapp-prospection-sync.mjs`: busca negocios do HauzApp em Prospecção direto no n8n, importa contatos/conversas/leads via Postgres e deixa a conversa com IA ativa. Tambem expoe o webhook manual `/webhook/pointer/hauzapp-sync-now` para testes imediatos.
 - `05-broker-sla-orchestrator.json`: executa as regras de cobranca dos corretores, visitas, escalonamento e lembretes.
 - `06-whatsapp-instance-health.json`: rotina para resetar contadores diarios e auditar instancias.
 - `07-lead-ai-brain.mjs`: cerebro inbound de IA. Carrega/cria contato e conversa no Supabase via Postgres, busca o agente configurado no front, chama OpenAI, salva lead/mensagem, agenda envio ao HauzApp quando qualificado e responde pelo canal Meta ou Uazapi.
