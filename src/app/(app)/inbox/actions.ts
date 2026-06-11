@@ -4,8 +4,10 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getCurrentProfile } from "@/lib/auth/organization";
 import { scheduleLeadFollowups } from "@/services/followups/lead-followups";
+import { configString, getActiveIntegrationConfig } from "@/services/integrations/config";
 import { enqueueHauzappQualifiedLead } from "@/services/leads/workflow";
 import { sendMetaMessage } from "@/services/meta/send-message";
+import { sendUazapiMessage } from "@/services/uazapi/send-message";
 import { createClient } from "@/lib/supabase/server";
 
 const replySchema = z.object({
@@ -17,6 +19,7 @@ type ConversationForReply = {
   id: string;
   organization_id: string;
   contact_id: string | null;
+  channel: string | null;
   contacts: {
     id: string;
     phone: string;
@@ -42,7 +45,7 @@ export async function sendManualReplyAction(formData: FormData) {
 
   const { data: conversation } = await supabase
     .from("conversations")
-    .select("id, organization_id, contact_id, contacts(id, phone)")
+    .select("id, organization_id, contact_id, channel, contacts(id, phone)")
     .eq("id", parsed.data.conversation_id)
     .eq("organization_id", profile.organization_id)
     .single<ConversationForReply>();
@@ -51,10 +54,18 @@ export async function sendManualReplyAction(formData: FormData) {
     return;
   }
 
-  const result = await sendMetaMessage({
-    phone: conversation.contacts.phone,
-    text: parsed.data.content
-  });
+  const isUazapi = conversation.channel === "uazapi";
+  const result = isUazapi
+    ? await sendUazapiManualReply({
+        supabase,
+        organizationId: profile.organization_id,
+        phone: conversation.contacts.phone,
+        text: parsed.data.content
+      })
+    : await sendMetaMessage({
+        phone: conversation.contacts.phone,
+        text: parsed.data.content
+      });
 
   const now = new Date().toISOString();
 
@@ -64,7 +75,7 @@ export async function sendManualReplyAction(formData: FormData) {
       conversation_id: conversation.id,
       contact_id: conversation.contacts.id,
       direction: "outbound",
-      channel: "meta",
+      channel: isUazapi ? "uazapi" : "meta",
       type: "text",
       content: parsed.data.content,
       status: "sent",
@@ -83,6 +94,41 @@ export async function sendManualReplyAction(formData: FormData) {
   });
 
   revalidatePath("/inbox");
+}
+
+async function sendUazapiManualReply({
+  supabase,
+  organizationId,
+  phone,
+  text
+}: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  organizationId: string;
+  phone: string;
+  text: string;
+}) {
+  const config = await getActiveIntegrationConfig(supabase, organizationId, "uazapi");
+  const payload = await sendUazapiMessage({
+    phone,
+    text,
+    integrationConfig: {
+      baseUrl: configString(config, ["baseUrl", "base_url", "url"], process.env.UAZAPI_BASE_URL) ?? undefined,
+      token: configString(config, ["token", "apiKey", "api_key"], process.env.UAZAPI_TOKEN) ?? undefined
+    }
+  });
+
+  const payloadRecord = payload as Record<string, unknown>;
+  const externalMessageId =
+    typeof payloadRecord.id === "string"
+      ? payloadRecord.id
+      : typeof payloadRecord.messageId === "string"
+        ? payloadRecord.messageId
+        : null;
+
+  return {
+    externalMessageId,
+    payload
+  };
 }
 
 export async function toggleAiAction(formData: FormData) {
