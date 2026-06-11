@@ -46,7 +46,7 @@ Os tokens Uazapi e instancias ficam no Supabase, cadastrados pelo front em `/set
 
 ## Workflows
 
-- `01-campaign-dispatch-router.json`: recebe campanha do front, busca contatos pendentes, escolhe Meta ou Uazapi, alterna ate 5 instancias e envia com delay humanizado.
+- `01-campaign-dispatch-router.mjs`: recebe campanha do front, responde o webhook imediatamente, alterna ate 5 instancias Uazapi selecionadas, respeita 20 mensagens/hora por instancia, envia com delay humanizado e grava status no Supabase.
 - `02-meta-inbound-lead-agent.json`: recebe webhook Meta, normaliza a mensagem inbound e envia para o cerebro `07`.
 - `03-uazapi-inbound-router.json`: recebe Uazapi, normaliza telefone/texto e envia para o cerebro `07`.
 - `04-hauzapp-prospection-sync.mjs`: busca negocios do HauzApp em Lead Novo direto no n8n, importa contatos/conversas/leads via Postgres e deixa a conversa com IA ativa. Tambem expoe o webhook manual `/webhook/pointer/hauzapp-sync-now` para testes imediatos.

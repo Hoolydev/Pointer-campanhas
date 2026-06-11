@@ -20,6 +20,7 @@ const whatsappInstanceSchema = z.object({
   sendOrder: z.coerce.number().int().min(0).default(0),
   minDelaySeconds: z.coerce.number().int().min(10).max(7200).default(90),
   maxDelaySeconds: z.coerce.number().int().min(10).max(7200).default(240),
+  hourlyLimit: z.coerce.number().int().min(1).max(20).default(20),
   dailyLimit: z.coerce.number().int().min(1).max(10000).default(500),
   active: z.coerce.boolean().default(true)
 });
@@ -39,6 +40,7 @@ export async function saveWhatsappInstanceAction(formData: FormData) {
     sendOrder: formData.get("sendOrder") || 0,
     minDelaySeconds: formData.get("minDelaySeconds") || 90,
     maxDelaySeconds: formData.get("maxDelaySeconds") || 240,
+    hourlyLimit: formData.get("hourlyLimit") || 20,
     dailyLimit: formData.get("dailyLimit") || 500,
     active: formData.get("active") === "on"
   });
@@ -72,7 +74,7 @@ export async function saveWhatsappInstanceAction(formData: FormData) {
 
     const { count } = await query;
 
-    if ((count ?? 0) >= 5) {
+    if ((count ?? 0) >= 20) {
       return;
     }
   }
@@ -101,6 +103,7 @@ export async function saveWhatsappInstanceAction(formData: FormData) {
     send_order: parsed.data.sendOrder,
     min_delay_seconds: parsed.data.minDelaySeconds,
     max_delay_seconds: parsed.data.maxDelaySeconds,
+    hourly_limit: parsed.data.hourlyLimit,
     daily_limit: parsed.data.dailyLimit,
     status: parsed.data.active ? "connected" : "paused",
     updated_at: new Date().toISOString()
@@ -190,6 +193,7 @@ export async function registerMetaEnvInstanceAction() {
     meta_access_token: process.env.META_ACCESS_TOKEN || null,
     min_delay_seconds: 90,
     max_delay_seconds: 240,
+    hourly_limit: 20,
     daily_limit: 1000,
     updated_at: new Date().toISOString()
   };

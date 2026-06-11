@@ -198,15 +198,39 @@ touch_conversation as (
   where conv.id = selected.id
   returning conv.*
 ),
+uazapi_config as (
+  select config
+  from public.integrations integ, conversation_row conv
+  where integ.organization_id = conv.organization_id
+    and integ.provider = 'uazapi'
+    and integ.active = true
+  order by integ.created_at desc
+  limit 1
+),
+hauzapp_config as (
+  select config
+  from public.integrations integ, conversation_row conv
+  where integ.organization_id = conv.organization_id
+    and integ.provider = 'hauzapp'
+    and integ.active = true
+  order by integ.created_at desc
+  limit 1
+),
 agent_row as (
   select a.*
   from public.ai_agents a
   cross join conversation_row conv
   left join campaign_row campaign on true
+  left join uazapi_config uazapi on true
+  left join hauzapp_config hauzapp on true
   where a.organization_id = conv.organization_id
     and a.active = true
     and a.agent_type = 'lead_meta'
-  order by (campaign.agent_id is not null and a.id = campaign.agent_id) desc, a.created_at desc
+  order by
+    (campaign.agent_id is not null and a.id = campaign.agent_id) desc,
+    (nullif(hauzapp.config->>'leadAgentId', '') is not null and a.id::text = hauzapp.config->>'leadAgentId') desc,
+    (nullif(uazapi.config->>'leadAgentId', '') is not null and a.id::text = uazapi.config->>'leadAgentId') desc,
+    a.created_at desc
   limit 1
 ),
 history as (
@@ -259,15 +283,6 @@ campaign_materials as (
     and cm.organization_id = campaign.organization_id
     and cm.active = true
 ),
-uazapi_config as (
-  select config
-  from public.integrations integ, conversation_row conv
-  where integ.organization_id = conv.organization_id
-    and integ.provider = 'uazapi'
-    and integ.active = true
-  order by integ.created_at desc
-  limit 1
-)
 select jsonb_build_object(
   'duplicate', (select duplicate from duplicate_message),
   'organization_id', conv.organization_id,

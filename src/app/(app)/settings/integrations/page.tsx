@@ -58,8 +58,8 @@ export default async function IntegrationsPage() {
       <section className="grid gap-6 xl:grid-cols-2">
         <form action={saveHauzappIntegrationAction} className="space-y-5 rounded-lg border bg-card p-6 shadow-sm">
           <IntegrationTitle
-            title="HauzApp CRM"
-            description="Busca leads em Prospecção e envia qualificados para a etapa correta."
+            title="Campanha inbound HauzApp"
+            description="Atende automaticamente os leads que entram em Lead Novo no HauzApp."
             active={Boolean(hauzapp?.active)}
           />
 
@@ -78,6 +78,12 @@ export default async function IntegrationsPage() {
               defaultValue={String(configNumber(hauzapp?.config, "prospectionStageId", 0))}
             />
             <Field
+              name="contactStageId"
+              label="Etapa Qualificando com a Nay"
+              type="number"
+              defaultValue={String(configNumber(hauzapp?.config, "contactStageId", 2))}
+            />
+            <Field
               name="qualifiedStageId"
               label="Etapa corretor/qualificado"
               type="number"
@@ -94,12 +100,22 @@ export default async function IntegrationsPage() {
 
           <label className="flex items-center gap-3 rounded-md border bg-white px-3 py-3 text-sm">
             <input
+              name="autoAttendLeadNovo"
+              type="checkbox"
+              defaultChecked={configBoolean(hauzapp?.config, "autoAttendLeadNovo", true)}
+              className="h-4 w-4"
+            />
+            Ativar atendimento IA para leads que entrarem em Lead Novo
+          </label>
+
+          <label className="flex items-center gap-3 rounded-md border bg-white px-3 py-3 text-sm">
+            <input
               name="autoGreetProspects"
               type="checkbox"
               defaultChecked={configBoolean(hauzapp?.config, "autoGreetProspects", false)}
               className="h-4 w-4"
             />
-            Enviar primeira mensagem pela Uazapi ao sincronizar Prospecção
+            Enviar primeira mensagem pela Uazapi ao sincronizar Lead Novo
           </label>
 
           <button className="h-10 w-full rounded-md bg-primary text-sm font-semibold text-primary-foreground">
@@ -152,7 +168,7 @@ export default async function IntegrationsPage() {
           <div>
             <h2 className="text-base font-semibold text-slate-950">Sincronização de Prospecção</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Importa negócios em Prospecção do HauzApp para o CRM e prepara atendimento por IA.
+              Importa negócios em Lead Novo do HauzApp para o CRM e prepara atendimento por IA.
             </p>
           </div>
           <form action={enqueueHauzappProspectionSyncAction}>

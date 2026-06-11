@@ -16,8 +16,10 @@ const schema = z.object({
 const hauzappSchema = z.object({
   apiKey: z.string().optional(),
   prospectionStageId: z.coerce.number().int().min(0).default(0),
+  contactStageId: z.coerce.number().int().min(0).default(2),
   qualifiedStageId: z.coerce.number().int().min(0).default(3),
   leadAgentId: z.string().uuid().optional().or(z.literal("")),
+  autoAttendLeadNovo: z.coerce.boolean().default(true),
   autoGreetProspects: z.coerce.boolean().default(false)
 });
 
@@ -68,8 +70,10 @@ export async function saveHauzappIntegrationAction(formData: FormData) {
   const parsed = hauzappSchema.safeParse({
     apiKey: formData.get("apiKey") || undefined,
     prospectionStageId: formData.get("prospectionStageId") || 0,
+    contactStageId: formData.get("contactStageId") || 2,
     qualifiedStageId: formData.get("qualifiedStageId") || 3,
     leadAgentId: formData.get("leadAgentId") || "",
+    autoAttendLeadNovo: formData.get("autoAttendLeadNovo") === "on",
     autoGreetProspects: formData.get("autoGreetProspects") === "on"
   });
 
@@ -83,8 +87,10 @@ export async function saveHauzappIntegrationAction(formData: FormData) {
     formConfig: {
       apiKey: parsed.data.apiKey,
       prospectionStageId: parsed.data.prospectionStageId,
+      contactStageId: parsed.data.contactStageId,
       qualifiedStageId: parsed.data.qualifiedStageId,
       leadAgentId: parsed.data.leadAgentId || null,
+      autoAttendLeadNovo: parsed.data.autoAttendLeadNovo,
       autoGreetProspects: parsed.data.autoGreetProspects
     },
     secretKeys: ["apiKey"]

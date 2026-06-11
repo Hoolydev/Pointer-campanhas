@@ -20,6 +20,7 @@ const campaignSchema = z
     send_interval_min_seconds: z.coerce.number().int().min(10).max(7200).default(90),
     send_interval_max_seconds: z.coerce.number().int().min(10).max(7200).default(240),
     uazapi_instance_strategy: z.enum(["round_robin", "least_recent"]).default("round_robin"),
+    uazapi_instance_ids: z.array(z.string().uuid()).max(5).default([]),
     initial_message: z.string().optional(),
     meta_template_name: z.string().optional(),
     meta_template_language: z.string().min(2).default("pt_BR"),
@@ -45,6 +46,13 @@ const campaignSchema = z
         message: "Informe o template aprovado da Meta para campanhas oficiais."
       });
     }
+    if (data.dispatch_channel === "uazapi" && data.uazapi_instance_ids.length === 0) {
+      context.addIssue({
+        code: "custom",
+        path: ["uazapi_instance_ids"],
+        message: "Selecione ao menos uma instancia Uazapi para o rodizio da campanha."
+      });
+    }
   });
 
 export async function createCampaignAction(
@@ -57,6 +65,7 @@ export async function createCampaignAction(
     send_interval_min_seconds: formData.get("send_interval_min_seconds") || 90,
     send_interval_max_seconds: formData.get("send_interval_max_seconds") || 240,
     uazapi_instance_strategy: formData.get("uazapi_instance_strategy") || "round_robin",
+    uazapi_instance_ids: formData.getAll("uazapi_instance_ids"),
     initial_message: formData.get("initial_message") || undefined,
     meta_template_name: formData.get("meta_template_name") || undefined,
     meta_template_language: formData.get("meta_template_language") || "pt_BR",
@@ -150,12 +159,27 @@ export async function createCampaignAction(
     return { error: "Agente de IA Lead/Meta nao encontrado ou inativo." };
   }
 
+  if (parsed.data.dispatch_channel === "uazapi") {
+    const { count: validInstances } = await supabase
+      .from("whatsapp_instances")
+      .select("*", { count: "exact", head: true })
+      .eq("organization_id", profile.organization_id)
+      .eq("provider", "uazapi")
+      .eq("active", true)
+      .in("id", parsed.data.uazapi_instance_ids);
+
+    if ((validInstances ?? 0) !== parsed.data.uazapi_instance_ids.length) {
+      return { error: "Uma ou mais instancias Uazapi selecionadas nao estao ativas." };
+    }
+  }
+
   const { data: campaign, error: campaignError } = await supabase
     .from("campaigns")
     .insert({
       organization_id: profile.organization_id,
       created_by: profile.id,
       status: "draft",
+      campaign_type: "outbound",
       name: parsed.data.name,
       dispatch_channel: parsed.data.dispatch_channel,
       n8n_enabled: true,
@@ -184,6 +208,20 @@ Importacao:
 
   if (campaignError || !campaign) {
     return { error: campaignError?.message ?? "Nao foi possivel criar a campanha." };
+  }
+
+  if (parsed.data.dispatch_channel === "uazapi" && parsed.data.uazapi_instance_ids.length > 0) {
+    const { error: instanceLinkError } = await supabase.from("campaign_whatsapp_instances").insert(
+      parsed.data.uazapi_instance_ids.map((instanceId) => ({
+        organization_id: profile.organization_id,
+        campaign_id: campaign.id,
+        whatsapp_instance_id: instanceId
+      }))
+    );
+
+    if (instanceLinkError) {
+      return { error: instanceLinkError.message };
+    }
   }
 
   const materials = buildMaterials(parsed.data, profile.organization_id, campaign.id);

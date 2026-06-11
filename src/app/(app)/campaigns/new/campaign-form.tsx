@@ -29,14 +29,24 @@ type MetaTemplatesResult = {
   error: string | null;
 };
 
+type WhatsappInstanceOption = {
+  id: string;
+  name: string;
+  phone: string | null;
+  hourly_limit: number;
+  sent_current_hour: number;
+};
+
 const MAX_ROUTE_UPLOAD_BYTES = 4 * 1024 * 1024;
 
 export function CampaignForm({
   agents,
+  uazapiInstances,
   metaPhone,
   metaTemplates
 }: {
   agents: AgentOption[];
+  uazapiInstances: WhatsappInstanceOption[];
   metaPhone: MetaPhoneResult;
   metaTemplates: MetaTemplatesResult;
 }) {
@@ -50,6 +60,20 @@ export function CampaignForm({
     const mediaIdInput = form.elements.namedItem("meta_header_media_id") as HTMLInputElement | null;
     const file = fileInput?.files?.[0];
     const mediaId = mediaIdInput?.value.trim();
+    const channel = String((form.elements.namedItem("dispatch_channel") as HTMLSelectElement | null)?.value ?? "meta");
+    const selectedInstances = Array.from(form.querySelectorAll<HTMLInputElement>("input[name='uazapi_instance_ids']:checked"));
+
+    if (channel === "uazapi" && selectedInstances.length === 0) {
+      event.preventDefault();
+      setClientError("Selecione ao menos uma instancia Uazapi para essa campanha.");
+      return;
+    }
+
+    if (selectedInstances.length > 5) {
+      event.preventDefault();
+      setClientError("Selecione no maximo 5 instancias Uazapi por campanha.");
+      return;
+    }
 
     if (file && file.size > MAX_ROUTE_UPLOAD_BYTES) {
       if (mediaId) {
@@ -117,8 +141,34 @@ export function CampaignForm({
             />
           </label>
           <p className="text-xs leading-5 text-muted-foreground sm:col-span-2">
-            O n8n usa uma pausa aleatoria dentro desse intervalo e alterna entre ate 5 instancias Uazapi ativas.
+            O n8n usa uma pausa aleatoria e limita cada instancia a no maximo 20 mensagens por hora. Com 3 instancias selecionadas, a campanha chega a 60 mensagens/hora.
           </p>
+          <div className="space-y-3 sm:col-span-2">
+            <div>
+              <span className="text-sm font-semibold text-slate-950">Numeros Uazapi desta campanha</span>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                Selecione ate 5 instancias. O rodizio usa apenas os numeros marcados aqui.
+              </p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {uazapiInstances.map((instance) => (
+                <label key={instance.id} className="flex items-start gap-3 rounded-md border bg-white p-3 text-sm">
+                  <input name="uazapi_instance_ids" type="checkbox" value={instance.id} className="mt-1 h-4 w-4" />
+                  <span>
+                    <span className="block font-semibold text-slate-950">{instance.name}</span>
+                    <span className="block text-xs text-muted-foreground">
+                      {instance.phone || "Numero sem telefone"} • {instance.sent_current_hour}/{Math.min(20, instance.hourly_limit)} nesta hora
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            {uazapiInstances.length === 0 ? (
+              <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                Nenhuma instancia Uazapi ativa. Cadastre em Configuracoes &gt; WhatsApp.
+              </p>
+            ) : null}
+          </div>
         </section>
         <section className="rounded-md border bg-slate-50 p-4">
           <label className="block space-y-2">

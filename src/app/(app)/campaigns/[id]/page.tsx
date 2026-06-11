@@ -19,6 +19,8 @@ type Campaign = {
   meta_header_media_url: string | null;
   meta_header_media_id: string | null;
   agent_prompt: string | null;
+  campaign_type: "standard" | "outbound" | "inbound" | "test";
+  dispatch_channel: "meta" | "uazapi";
   status: "draft" | "active" | "paused" | "finished";
 };
 
@@ -52,6 +54,14 @@ type Material = {
   media_url: string;
 };
 
+type CampaignInstance = {
+  whatsapp_instances: {
+    name: string;
+    phone: string | null;
+    hourly_limit: number;
+  } | null;
+};
+
 export default async function CampaignDetailPage({
   params,
   searchParams
@@ -76,11 +86,12 @@ export default async function CampaignDetailPage({
     { data: campaign },
     { data: contacts, count: totalContacts },
     { data: jobs },
-    { data: materials }
+    { data: materials },
+    { data: campaignInstances }
   ] = await Promise.all([
     supabase
       .from("campaigns")
-      .select("id, name, agent_id, property_description, initial_message, meta_template_name, meta_template_language, meta_template_body_params, meta_header_media_type, meta_header_media_url, meta_header_media_id, agent_prompt, status")
+      .select("id, name, agent_id, property_description, initial_message, meta_template_name, meta_template_language, meta_template_body_params, meta_header_media_type, meta_header_media_url, meta_header_media_id, agent_prompt, campaign_type, dispatch_channel, status")
       .eq("id", id)
       .eq("organization_id", profile.organization_id)
       .single<Campaign>(),
@@ -107,6 +118,13 @@ export default async function CampaignDetailPage({
       .eq("active", true)
       .order("created_at", { ascending: false })
       .returns<Material[]>()
+    ,
+    supabase
+      .from("campaign_whatsapp_instances")
+      .select("whatsapp_instances(name, phone, hourly_limit)")
+      .eq("campaign_id", id)
+      .eq("organization_id", profile.organization_id)
+      .returns<CampaignInstance[]>()
   ]);
 
   if (!campaign) {
@@ -206,6 +224,34 @@ export default async function CampaignDetailPage({
         </div>
 
         <aside className="space-y-5">
+          <section className="rounded-lg border bg-card p-5 shadow-sm">
+            <h2 className="text-sm font-semibold text-slate-950">Tipo de campanha</h2>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Badge tone={campaign.campaign_type === "inbound" ? "success" : "muted"}>
+                {campaign.campaign_type === "inbound" ? "Inbound" : campaign.campaign_type === "test" ? "Teste" : "Outbound"}
+              </Badge>
+              <Badge tone="muted">{campaign.dispatch_channel === "uazapi" ? "Uazapi" : "Meta oficial"}</Badge>
+            </div>
+          </section>
+          {campaign.dispatch_channel === "uazapi" ? (
+            <section className="rounded-lg border bg-card p-5 shadow-sm">
+              <h2 className="text-sm font-semibold text-slate-950">Rodizio Uazapi</h2>
+              <div className="mt-3 space-y-2">
+                {campaignInstances?.length ? (
+                  campaignInstances.map((item, index) => (
+                    <div key={`${item.whatsapp_instances?.phone ?? index}`} className="rounded-md border bg-slate-50 p-3 text-sm">
+                      <p className="font-medium text-slate-950">{item.whatsapp_instances?.name ?? "Instancia"}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {item.whatsapp_instances?.phone ?? "sem telefone"} • max. {Math.min(20, item.whatsapp_instances?.hourly_limit ?? 20)}/h
+                      </p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground">Usando as primeiras 5 instancias Uazapi ativas.</p>
+                )}
+              </div>
+            </section>
+          ) : null}
           <section className="rounded-lg border bg-card p-5 shadow-sm">
             <h2 className="text-sm font-semibold text-slate-950">Agente IA</h2>
             <p className="mt-3 text-sm font-medium text-slate-950">

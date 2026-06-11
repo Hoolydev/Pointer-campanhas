@@ -45,8 +45,12 @@ type WhatsappInstanceRow = {
   instance_key: string | null;
   min_delay_seconds: number;
   max_delay_seconds: number;
+  hourly_limit: number;
+  sent_current_hour: number;
+  sent_current_hour_bucket: string;
   daily_limit: number;
   sent_today: number;
+  last_sent_at: string | null;
 };
 
 type QstashPublishResult =
@@ -165,17 +169,38 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   if ((parsed.data.processor === "n8n" || campaign.n8n_enabled) && n8nDispatchWebhookUrl) {
-    const { data: uazapiInstances, error: instancesError } =
+    const { data: selectedInstances } =
       campaign.dispatch_channel === "uazapi"
         ? await supabase
-            .from("whatsapp_instances")
-            .select("id, name, phone, base_url, token, instance_key, min_delay_seconds, max_delay_seconds, daily_limit, sent_today")
+            .from("campaign_whatsapp_instances")
+            .select("whatsapp_instance_id")
             .eq("organization_id", profile.organization_id)
-            .eq("provider", "uazapi")
-            .eq("active", true)
-            .order("send_order", { ascending: true })
-            .limit(5)
-            .returns<WhatsappInstanceRow[]>()
+            .eq("campaign_id", campaign.id)
+            .returns<Array<{ whatsapp_instance_id: string }>>()
+        : { data: [] };
+    const selectedInstanceIds = (selectedInstances ?? []).map((item) => item.whatsapp_instance_id);
+    const { data: uazapiInstances, error: instancesError } =
+      campaign.dispatch_channel === "uazapi"
+        ? selectedInstanceIds.length > 0
+          ? await supabase
+              .from("whatsapp_instances")
+              .select("id, name, phone, base_url, token, instance_key, min_delay_seconds, max_delay_seconds, hourly_limit, sent_current_hour, sent_current_hour_bucket, daily_limit, sent_today, last_sent_at")
+              .eq("organization_id", profile.organization_id)
+              .eq("provider", "uazapi")
+              .eq("active", true)
+              .in("id", selectedInstanceIds)
+              .order("send_order", { ascending: true })
+              .limit(5)
+              .returns<WhatsappInstanceRow[]>()
+          : await supabase
+              .from("whatsapp_instances")
+              .select("id, name, phone, base_url, token, instance_key, min_delay_seconds, max_delay_seconds, hourly_limit, sent_current_hour, sent_current_hour_bucket, daily_limit, sent_today, last_sent_at")
+              .eq("organization_id", profile.organization_id)
+              .eq("provider", "uazapi")
+              .eq("active", true)
+              .order("send_order", { ascending: true })
+              .limit(5)
+              .returns<WhatsappInstanceRow[]>()
         : { data: [], error: null };
 
     if (instancesError) {
@@ -212,6 +237,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         minDelaySeconds: campaign.send_interval_min_seconds,
         maxDelaySeconds: campaign.send_interval_max_seconds,
         uazapiInstanceStrategy: campaign.uazapi_instance_strategy,
+        hourlyLimitPerInstance: 20,
         campaign: {
           id: campaign.id,
           dispatchChannel: campaign.dispatch_channel,
@@ -235,8 +261,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           instanceKey: instance.instance_key,
           minDelaySeconds: instance.min_delay_seconds,
           maxDelaySeconds: instance.max_delay_seconds,
+          hourlyLimit: Math.min(20, instance.hourly_limit || 20),
+          sentCurrentHour: instance.sent_current_hour,
+          sentCurrentHourBucket: instance.sent_current_hour_bucket,
           dailyLimit: instance.daily_limit,
-          sentToday: instance.sent_today
+          sentToday: instance.sent_today,
+          lastSentAt: instance.last_sent_at
         })),
         contacts: contacts.map((contact) => ({
           id: contact.id,

@@ -18,7 +18,7 @@ const settingsLinks: Array<{
   {
     href: "/settings/whatsapp" as Route,
     title: "WhatsApp",
-    description: "Gerenciar Meta e ate 5 instancias Uazapi para rodizio.",
+    description: "Gerenciar Meta e instancias Uazapi para rodizio de campanhas.",
     icon: Smartphone
   },
   {

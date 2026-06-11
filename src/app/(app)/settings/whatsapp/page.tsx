@@ -20,6 +20,8 @@ type WhatsappInstance = {
   send_order: number;
   min_delay_seconds: number;
   max_delay_seconds: number;
+  hourly_limit: number;
+  sent_current_hour: number;
   daily_limit: number;
   sent_today: number;
   last_sent_at: string | null;
@@ -37,7 +39,7 @@ export default async function WhatsappSettingsPage() {
     ? await Promise.all([
         supabase
           .from("whatsapp_instances")
-          .select("id, provider, name, phone, status, active, send_order, min_delay_seconds, max_delay_seconds, daily_limit, sent_today, last_sent_at, base_url, token, instance_key, meta_phone_number_id, meta_business_account_id")
+          .select("id, provider, name, phone, status, active, send_order, min_delay_seconds, max_delay_seconds, hourly_limit, sent_current_hour, daily_limit, sent_today, last_sent_at, base_url, token, instance_key, meta_phone_number_id, meta_business_account_id")
           .eq("organization_id", profile.organization_id)
           .order("provider", { ascending: true })
           .order("send_order", { ascending: true })
@@ -53,7 +55,7 @@ export default async function WhatsappSettingsPage() {
     <>
       <PageHeader
         title="WhatsApp"
-        description="Configure os numeros oficiais da Meta e ate 5 instancias Uazapi para rodizio humanizado."
+        description="Configure Meta e instancias Uazapi. Nas campanhas, escolha ate 5 numeros para rodizio com limite de 20 mensagens por hora por instancia."
       />
 
       <section className="grid gap-6 xl:grid-cols-[1fr_420px]">
@@ -91,11 +93,11 @@ export default async function WhatsappSettingsPage() {
               <div>
                 <h2 className="text-base font-semibold text-slate-950">Instancias Uazapi</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  O n8n alterna os disparos entre as instancias ativas respeitando delay e limite diario.
+                  O n8n alterna os disparos entre as instancias selecionadas na campanha respeitando pausa humana e limite por hora.
                 </p>
               </div>
-              <Badge tone={activeUazapiCount <= 5 ? "success" : "danger"}>
-                {activeUazapiCount}/5 ativas
+              <Badge tone={activeUazapiCount <= 20 ? "success" : "danger"}>
+                {activeUazapiCount}/20 ativas
               </Badge>
             </div>
 
@@ -106,7 +108,8 @@ export default async function WhatsappSettingsPage() {
                     <th className="px-4 py-3">Nome</th>
                     <th className="px-4 py-3">Telefone</th>
                     <th className="px-4 py-3">Delay</th>
-                    <th className="px-4 py-3">Limite</th>
+                    <th className="px-4 py-3">Hora</th>
+                    <th className="px-4 py-3">Dia</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3"></th>
                   </tr>
@@ -118,6 +121,9 @@ export default async function WhatsappSettingsPage() {
                       <td className="px-4 py-3 text-slate-700">{instance.phone || "Nao informado"}</td>
                       <td className="px-4 py-3 text-slate-700">
                         {instance.min_delay_seconds}s - {instance.max_delay_seconds}s
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">
+                        {instance.sent_current_hour}/{instance.hourly_limit}
                       </td>
                       <td className="px-4 py-3 text-slate-700">
                         {instance.sent_today}/{instance.daily_limit}
@@ -148,7 +154,7 @@ export default async function WhatsappSettingsPage() {
                   ))}
                   {uazapiInstances.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
+                      <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
                         Nenhuma instancia Uazapi cadastrada.
                       </td>
                     </tr>
@@ -205,18 +211,28 @@ export default async function WhatsappSettingsPage() {
               <Field name="maxDelaySeconds" label="Delay maximo" placeholder="240" type="number" defaultValue="240" />
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
+              <Field name="hourlyLimit" label="Limite por hora" placeholder="20" type="number" defaultValue="20" />
               <Field name="dailyLimit" label="Limite diario" placeholder="500" type="number" defaultValue="500" />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
               <Field name="sendOrder" label="Ordem no rodizio" placeholder="0" type="number" defaultValue="0" />
+            </div>
+            <div className="rounded-md border bg-slate-50 p-3 text-sm text-muted-foreground">
+              Configure na Uazapi o webhook abaixo para mensagens recebidas. Campos esperados:
+              <span className="mt-2 block rounded bg-white px-2 py-1 font-mono text-xs text-slate-700">
+                https://pointer-campanhas.vercel.app/api/webhooks/uazapi
+              </span>
+              <span className="mt-2 block">Envie telefone/remetente em <b>phone</b> ou <b>from</b> e texto em <b>message</b>, <b>text</b> ou <b>body</b>.</span>
             </div>
             <label className="flex items-center gap-3 rounded-md border bg-white px-3 py-3 text-sm">
               <input name="active" type="checkbox" defaultChecked className="h-4 w-4" />
               Ativar no rodizio
             </label>
             <button
-              disabled={activeUazapiCount >= 5}
+              disabled={activeUazapiCount >= 20}
               className="h-10 w-full rounded-md bg-primary text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {activeUazapiCount >= 5 ? "Limite de 5 instancias atingido" : "Salvar instancia"}
+              {activeUazapiCount >= 20 ? "Limite de 20 instancias atingido" : "Salvar instancia"}
             </button>
           </form>
         </section>

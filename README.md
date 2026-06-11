@@ -191,8 +191,9 @@ https://pointer-campanhas.vercel.app/api/webhooks/uazapi
 5. Se `ai_enabled = true`, o agente selecionado responde, qualifica e atualiza o lead.
 6. Quando qualificado, o lead e enviado ao HauzApp na etapa `Lead Qualificado`.
 7. Se o lead demonstrar intencao de visita, o agente prepara opcoes de agenda e registra em `/appointments`.
-8. A sincronizacao HauzApp em `/settings/integrations` busca leads em `Prospecção` e cria atendimento por Uazapi.
+8. A sincronizacao HauzApp em `/settings/integrations` busca leads em `Lead Novo`, respeita o liga/desliga de IA e prepara atendimento por Uazapi.
 9. Respostas vindas pela Uazapi chamam o agente configurado e atualizam o CRM.
+10. Campanhas Uazapi podem usar ate 5 instancias selecionadas no front; cada instancia fica limitada a no maximo 20 mensagens por hora.
 
 ## Habilidades inspiradas na secretaria n8n
 

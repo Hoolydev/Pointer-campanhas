@@ -76,7 +76,7 @@ with input as (
   select ${json(selected)}::jsonb as items
 ),
 org as (
-  select organization_id
+  select organization_id, config
   from public.integrations
   where provider = 'hauzapp'
     and active = true
@@ -90,11 +90,14 @@ org_fallback as (
   limit 1
 ),
 resolved_org as (
-  select coalesce((select organization_id from org), (select organization_id from org_fallback)) as organization_id
+  select
+    coalesce((select organization_id from org), (select organization_id from org_fallback)) as organization_id,
+    coalesce((select config from org), '{}'::jsonb) as config
 ),
 rows as (
   select
     r.organization_id,
+    coalesce((r.config->>'autoAttendLeadNovo')::boolean, true) as ai_enabled,
     item,
     item->>'clienteID' as cliente_id,
     nullif(item->>'clienteNome', '') as cliente_nome,
@@ -195,11 +198,14 @@ inserted_conversations as (
     null,
     'open',
     'hauzapp_prospection',
-    true,
+    row.ai_enabled,
     'uazapi',
     contact.hauzapp_cliente_id,
     now()
   from contact_rows contact
+  join rows row
+    on row.organization_id = contact.organization_id
+   and (row.cliente_id = contact.hauzapp_cliente_id or row.phone = contact.phone)
   where not exists (
     select 1
     from existing_conversations ec
@@ -215,10 +221,13 @@ conversation_rows as (
 updated_conversations as (
   update public.conversations conv
   set
-    ai_enabled = true,
+    ai_enabled = row.ai_enabled,
     current_stage = 'hauzapp_prospection',
     hauzapp_cliente_id = contact.hauzapp_cliente_id
   from contact_rows contact
+  join rows row
+    on row.organization_id = contact.organization_id
+   and (row.cliente_id = contact.hauzapp_cliente_id or row.phone = contact.phone)
   where conv.contact_id = contact.id
     and conv.organization_id = contact.organization_id
     and coalesce(conv.channel, 'uazapi') = 'uazapi'
@@ -325,7 +334,7 @@ select jsonb_build_object(
   'matched', ${selected.length},
   'inserted_leads', (select count(*) from inserted_leads),
   'updated_leads', (select count(*) from updated_leads),
-  'ai_enabled', true
+  'ai_enabled', (select coalesce(bool_or(ai_enabled), true) from rows)
 ) as response;
 `;
 

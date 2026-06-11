@@ -12,6 +12,8 @@ type CampaignRow = {
   id: string;
   name: string;
   status: "draft" | "active" | "paused" | "finished";
+  campaign_type: "standard" | "outbound" | "inbound" | "test";
+  dispatch_channel: "meta" | "uazapi";
   created_at: string;
 };
 
@@ -32,7 +34,7 @@ export default async function CampaignsPage() {
   const { data: campaignRows, error: campaignsError } = profile
     ? await supabase
         .from("campaigns")
-        .select("id, name, status, created_at")
+        .select("id, name, status, campaign_type, dispatch_channel, created_at")
         .eq("organization_id", profile.organization_id)
         .order("created_at", { ascending: false })
         .returns<CampaignRow[]>()
@@ -74,6 +76,7 @@ export default async function CampaignsPage() {
             <thead className="bg-muted text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="px-4 py-3 font-semibold">Campanha</th>
+                <th className="px-4 py-3 font-semibold">Tipo</th>
                 <th className="px-4 py-3 font-semibold">Status</th>
                 <th className="px-4 py-3 font-semibold">Contatos</th>
                 <th className="px-4 py-3 font-semibold">Criada em</th>
@@ -90,6 +93,18 @@ export default async function CampaignsPage() {
                     >
                       {campaign.name}
                     </Link>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex gap-2">
+                      <Badge tone={campaign.campaign_type === "inbound" ? "success" : "muted"}>
+                        {campaign.campaign_type === "inbound"
+                          ? "Inbound"
+                          : campaign.campaign_type === "test"
+                          ? "Teste"
+                          : "Outbound"}
+                      </Badge>
+                      <Badge tone="muted">{campaign.dispatch_channel === "uazapi" ? "Uazapi" : "Meta"}</Badge>
+                    </div>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex gap-2">

@@ -43,6 +43,9 @@ create table if not exists public.whatsapp_instances (
   send_order int not null default 0,
   min_delay_seconds int not null default 90,
   max_delay_seconds int not null default 240,
+  hourly_limit int not null default 20,
+  sent_current_hour int not null default 0,
+  sent_current_hour_bucket timestamptz not null default date_trunc('hour', now()),
   daily_limit int not null default 500,
   sent_today int not null default 0,
   sent_today_date date not null default current_date,
@@ -63,7 +66,9 @@ create table if not exists public.whatsapp_instances (
       and max_delay_seconds <= 7200
     ),
   constraint whatsapp_instances_daily_limit_check
-    check (daily_limit >= 1 and daily_limit <= 10000)
+    check (daily_limit >= 1 and daily_limit <= 10000),
+  constraint whatsapp_instances_hourly_limit_check
+    check (hourly_limit >= 1 and hourly_limit <= 20)
 );
 
 create index if not exists whatsapp_instances_org_provider_idx

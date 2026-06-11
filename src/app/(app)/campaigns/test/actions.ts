@@ -108,6 +108,8 @@ export async function createTestCampaignAction(
       organization_id: profile.organization_id,
       created_by: profile.id,
       status: "draft",
+      campaign_type: "test",
+      dispatch_channel: "meta",
       name: parsed.data.name,
       property_description: `Campanha de teste.
 
