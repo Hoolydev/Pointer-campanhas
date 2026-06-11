@@ -16,6 +16,7 @@ type ConversationRow = {
   id: string;
   status: string;
   current_stage: string;
+  channel: string | null;
   ai_enabled: boolean;
   last_message_at: string | null;
   contacts: {
@@ -59,7 +60,7 @@ export default async function InboxPage({
 
   const { data: conversations } = await supabase
     .from("conversations")
-    .select("id, status, current_stage, ai_enabled, last_message_at, contacts(name, phone), campaigns(name)")
+    .select("id, status, current_stage, channel, ai_enabled, last_message_at, contacts(name, phone), campaigns(name)")
     .eq("organization_id", profile.organization_id)
     .order("last_message_at", { ascending: false, nullsFirst: false })
     .limit(50)
@@ -80,7 +81,13 @@ export default async function InboxPage({
 
   return (
     <>
-      <PageHeader title="Inbox" description="Conversas recebidas pelo WhatsApp e canais integrados." />
+      <PageHeader title="Inbox" description="Atendimento em tempo real das conversas Meta, Uazapi e HauzApp." />
+      <section className="mb-5 grid gap-3 md:grid-cols-4">
+        <Metric label="Conversas" value={String(conversations?.length ?? 0)} />
+        <Metric label="IA ativa" value={String((conversations ?? []).filter((conversation) => conversation.ai_enabled).length)} />
+        <Metric label="Meta" value={String((conversations ?? []).filter((conversation) => conversation.channel === "meta").length)} />
+        <Metric label="Uazapi/HauzApp" value={String((conversations ?? []).filter((conversation) => conversation.channel === "uazapi").length)} />
+      </section>
       <section className="grid min-h-[640px] gap-6 lg:grid-cols-[360px_1fr]">
         <aside className="overflow-hidden rounded-lg border bg-card shadow-sm">
           <div className="border-b px-4 py-3">
@@ -106,6 +113,9 @@ export default async function InboxPage({
                     {conversation.ai_enabled ? <Bot className="h-4 w-4 text-teal-700" /> : null}
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
+                    <Badge tone={conversation.channel === "uazapi" ? "success" : "muted"}>
+                      {conversation.channel === "uazapi" ? "HauzApp/Uazapi" : conversation.channel || "WhatsApp"}
+                    </Badge>
                     <Badge tone="muted">{conversation.current_stage}</Badge>
                     <Badge>{conversation.campaigns?.name || "Sem campanha"}</Badge>
                   </div>
@@ -132,6 +142,9 @@ export default async function InboxPage({
                   </p>
                 </div>
                 <div className="flex gap-2">
+                  <Badge tone={activeConversation.channel === "uazapi" ? "success" : "muted"}>
+                    {activeConversation.channel === "uazapi" ? "HauzApp/Uazapi" : activeConversation.channel || "WhatsApp"}
+                  </Badge>
                   <Badge tone={activeConversation.ai_enabled ? "success" : "muted"}>
                     IA {activeConversation.ai_enabled ? "ativa" : "pausada"}
                   </Badge>
@@ -209,6 +222,15 @@ export default async function InboxPage({
         </div>
       </section>
     </>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border bg-card p-4 shadow-sm">
+      <p className="text-xs font-medium uppercase text-muted-foreground">{label}</p>
+      <p className="mt-2 text-2xl font-semibold text-slate-950">{value}</p>
+    </div>
   );
 }
 

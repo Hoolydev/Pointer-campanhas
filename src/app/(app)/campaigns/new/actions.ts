@@ -13,6 +13,10 @@ type CreateCampaignState = {
   error?: string;
 };
 
+type CreateInboundCampaignState = {
+  error?: string;
+};
+
 const campaignSchema = z
   .object({
     name: z.string().min(2, "Informe o nome da campanha."),
@@ -54,6 +58,18 @@ const campaignSchema = z
       });
     }
   });
+
+const inboundCampaignSchema = z.object({
+  name: z.string().min(2, "Informe o nome da campanha inbound."),
+  agent_id: z.string().uuid("Selecione o agente de IA que vai atender os leads."),
+  prospection_stage_id: z.coerce.number().int().min(0).default(0),
+  contact_stage_id: z.coerce.number().int().min(0).default(2),
+  qualified_stage_id: z.coerce.number().int().min(0).default(3),
+  broker_followup_minutes: z.coerce.number().int().min(5).max(240).default(15),
+  broker_escalation_minutes: z.coerce.number().int().min(10).max(1440).default(30),
+  auto_attend: z.coerce.boolean().default(true),
+  auto_greet: z.coerce.boolean().default(false)
+});
 
 export async function createCampaignAction(
   _: CreateCampaignState | null,
@@ -257,6 +273,127 @@ Importacao:
 
   revalidatePath("/dashboard");
   revalidatePath("/campaigns");
+  redirect(`/campaigns/${campaign.id}` as Route);
+}
+
+export async function createInboundCampaignAction(
+  _: CreateInboundCampaignState | null,
+  formData: FormData
+): Promise<CreateInboundCampaignState> {
+  const parsed = inboundCampaignSchema.safeParse({
+    name: formData.get("name"),
+    agent_id: formData.get("agent_id"),
+    prospection_stage_id: formData.get("prospection_stage_id") || 0,
+    contact_stage_id: formData.get("contact_stage_id") || 2,
+    qualified_stage_id: formData.get("qualified_stage_id") || 3,
+    broker_followup_minutes: formData.get("broker_followup_minutes") || 15,
+    broker_escalation_minutes: formData.get("broker_escalation_minutes") || 30,
+    auto_attend: formData.get("auto_attend") === "on",
+    auto_greet: formData.get("auto_greet") === "on"
+  });
+
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Revise a campanha inbound." };
+  }
+
+  const supabase = await createClient();
+  const { profile, error: profileError } = await getCurrentProfile(supabase);
+
+  if (!profile) {
+    return { error: profileError };
+  }
+
+  const { data: agent } = await supabase
+    .from("ai_agents")
+    .select("system_prompt")
+    .eq("id", parsed.data.agent_id)
+    .eq("organization_id", profile.organization_id)
+    .eq("agent_type", "lead_meta")
+    .eq("active", true)
+    .maybeSingle<{ system_prompt: string }>();
+
+  if (!agent) {
+    return { error: "Agente de IA Lead/Meta nao encontrado ou inativo." };
+  }
+
+  const { data: existingHauzapp } = await supabase
+    .from("integrations")
+    .select("id, config")
+    .eq("organization_id", profile.organization_id)
+    .eq("provider", "hauzapp")
+    .eq("active", true)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ id: string; config: Record<string, unknown> | null }>();
+
+  const hauzappConfig = {
+    ...(existingHauzapp?.config ?? {}),
+    prospectionStageId: parsed.data.prospection_stage_id,
+    contactStageId: parsed.data.contact_stage_id,
+    qualifiedStageId: parsed.data.qualified_stage_id,
+    leadAgentId: parsed.data.agent_id,
+    autoAttendLeadNovo: parsed.data.auto_attend,
+    autoGreetProspects: parsed.data.auto_greet,
+    brokerFollowupMinutes: parsed.data.broker_followup_minutes,
+    brokerEscalationMinutes: parsed.data.broker_escalation_minutes
+  };
+
+  if (existingHauzapp) {
+    await supabase
+      .from("integrations")
+      .update({ name: "Campanha inbound HauzApp", config: hauzappConfig, active: true })
+      .eq("id", existingHauzapp.id)
+      .eq("organization_id", profile.organization_id);
+  } else {
+    await supabase.from("integrations").insert({
+      organization_id: profile.organization_id,
+      provider: "hauzapp",
+      name: "Campanha inbound HauzApp",
+      config: hauzappConfig,
+      active: true
+    });
+  }
+
+  const { data: campaign, error: campaignError } = await supabase
+    .from("campaigns")
+    .insert({
+      organization_id: profile.organization_id,
+      created_by: profile.id,
+      status: parsed.data.auto_attend ? "active" : "paused",
+      campaign_type: "inbound",
+      dispatch_channel: "uazapi",
+      inbound_enabled: parsed.data.auto_attend,
+      n8n_enabled: true,
+      name: parsed.data.name,
+      property_description: `Inbound HauzApp configurado pelo assistente.
+
+Funil:
+- Entrada: Lead Novo (${parsed.data.prospection_stage_id})
+- Atendimento IA/Nay: ${parsed.data.contact_stage_id}
+- Qualificado/corretor: ${parsed.data.qualified_stage_id}
+
+Corretor:
+- Primeiro follow-up: ${parsed.data.broker_followup_minutes} min
+- Escalonamento: ${parsed.data.broker_escalation_minutes} min`,
+      initial_message: parsed.data.auto_greet
+        ? "Olá, {{nome}}. Obrigado por responder. Como posso te ajudar?"
+        : null,
+      meta_template_name: null,
+      meta_template_language: "pt_BR",
+      meta_template_body_params: ["{{nome}}"],
+      agent_id: parsed.data.agent_id,
+      agent_prompt: agent.system_prompt
+    })
+    .select("id")
+    .single<{ id: string }>();
+
+  if (campaignError || !campaign) {
+    return { error: campaignError?.message ?? "Nao foi possivel criar a campanha inbound." };
+  }
+
+  revalidatePath("/campaigns");
+  revalidatePath("/settings/integrations");
+  revalidatePath("/crm");
   redirect(`/campaigns/${campaign.id}` as Route);
 }
 

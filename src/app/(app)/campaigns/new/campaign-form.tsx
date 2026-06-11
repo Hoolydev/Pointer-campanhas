@@ -1,8 +1,11 @@
 "use client";
 
-import { useActionState, useState } from "react";
-import { UploadCloud } from "lucide-react";
-import { createCampaignAction } from "./actions";
+import Link from "next/link";
+import { useActionState, useMemo, useState } from "react";
+import type { Route } from "next";
+import type { LucideIcon } from "lucide-react";
+import { Bot, Check, ChevronLeft, ChevronRight, ClipboardList, MessageSquare, Plug, UploadCloud } from "lucide-react";
+import { createCampaignAction, createInboundCampaignAction } from "./actions";
 
 type AgentOption = {
   id: string;
@@ -37,7 +40,17 @@ type WhatsappInstanceOption = {
   sent_current_hour: number;
 };
 
+type Mode = "outbound" | "inbound";
+
 const MAX_ROUTE_UPLOAD_BYTES = 4 * 1024 * 1024;
+
+const stageOptions = [
+  { label: "Lead Novo", value: "0" },
+  { label: "Qualificando com a Nay", value: "2" },
+  { label: "Aguardando atendimento / corretor", value: "3" },
+  { label: "1 atendimento com corretor", value: "6" },
+  { label: "Lead Qualificado / Em atendimento", value: "7" }
+];
 
 export function CampaignForm({
   agents,
@@ -50,265 +63,680 @@ export function CampaignForm({
   metaPhone: MetaPhoneResult;
   metaTemplates: MetaTemplatesResult;
 }) {
-  const [state, formAction, pending] = useActionState(createCampaignAction, null);
+  const [mode, setMode] = useState<Mode>("outbound");
+  const [step, setStep] = useState(0);
+  const [channel, setChannel] = useState<"meta" | "uazapi">("meta");
+  const [selectedInstances, setSelectedInstances] = useState<string[]>([]);
   const [clientError, setClientError] = useState<string | null>(null);
+  const [outboundState, outboundAction, outboundPending] = useActionState(createCampaignAction, null);
+  const [inboundState, inboundAction, inboundPending] = useActionState(createInboundCampaignAction, null);
   const approvedTemplates = metaTemplates.data.filter((template) => template.status === "APPROVED");
+  const pending = outboundPending || inboundPending;
+  const stateError = mode === "outbound" ? outboundState?.error : inboundState?.error;
+  const steps = useMemo(
+    () =>
+      mode === "outbound"
+        ? ["Tipo", "Conexoes", "Agente", "Lista", "Revisao"]
+        : ["Tipo", "Funil", "Agente", "Follow-up", "Revisao"],
+    [mode]
+  );
+  const selectedCapacity = selectedInstances.length * 20;
+
+  function selectMode(nextMode: Mode) {
+    setMode(nextMode);
+    setStep(1);
+    setClientError(null);
+  }
+
+  function toggleInstance(id: string) {
+    setSelectedInstances((current) => {
+      if (current.includes(id)) {
+        return current.filter((item) => item !== id);
+      }
+
+      if (current.length >= 5) {
+        setClientError("Escolha no maximo 5 numeros para esta campanha.");
+        return current;
+      }
+
+      setClientError(null);
+      return [...current, id];
+    });
+  }
+
+  function nextStep() {
+    if (mode === "outbound" && step === 1 && channel === "uazapi" && selectedInstances.length === 0) {
+      setClientError("Selecione ao menos uma instancia Uazapi ou conecte um numero antes de continuar.");
+      return;
+    }
+
+    setClientError(null);
+    setStep((current) => Math.min(steps.length - 1, current + 1));
+  }
+
+  function previousStep() {
+    setClientError(null);
+    setStep((current) => Math.max(0, current - 1));
+  }
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     const form = event.currentTarget;
-    const fileInput = form.elements.namedItem("meta_header_media_file") as HTMLInputElement | null;
-    const mediaIdInput = form.elements.namedItem("meta_header_media_id") as HTMLInputElement | null;
-    const file = fileInput?.files?.[0];
-    const mediaId = mediaIdInput?.value.trim();
-    const channel = String((form.elements.namedItem("dispatch_channel") as HTMLSelectElement | null)?.value ?? "meta");
-    const selectedInstances = Array.from(form.querySelectorAll<HTMLInputElement>("input[name='uazapi_instance_ids']:checked"));
 
-    if (channel === "uazapi" && selectedInstances.length === 0) {
-      event.preventDefault();
-      setClientError("Selecione ao menos uma instancia Uazapi para essa campanha.");
-      return;
-    }
+    if (mode === "outbound") {
+      const fileInput = form.elements.namedItem("meta_header_media_file") as HTMLInputElement | null;
+      const mediaIdInput = form.elements.namedItem("meta_header_media_id") as HTMLInputElement | null;
+      const file = fileInput?.files?.[0];
+      const mediaId = mediaIdInput?.value.trim();
 
-    if (selectedInstances.length > 5) {
-      event.preventDefault();
-      setClientError("Selecione no maximo 5 instancias Uazapi por campanha.");
-      return;
-    }
-
-    if (file && file.size > MAX_ROUTE_UPLOAD_BYTES) {
-      if (mediaId) {
-        fileInput.value = "";
-        setClientError(null);
+      if (channel === "uazapi" && selectedInstances.length === 0) {
+        event.preventDefault();
+        setClientError("Selecione ao menos uma instancia Uazapi para essa campanha.");
         return;
       }
 
-      event.preventDefault();
-      setClientError(
-        "Esse arquivo passa do limite de upload da Vercel. Envie a midia para a Meta primeiro e cole o Media ID, ou use um arquivo com ate 4 MB."
-      );
-      return;
+      if (file && file.size > MAX_ROUTE_UPLOAD_BYTES) {
+        if (mediaId) {
+          fileInput.value = "";
+          setClientError(null);
+          return;
+        }
+
+        event.preventDefault();
+        setClientError("Arquivo acima de 4 MB: cole o Media ID da Meta ou use um arquivo menor.");
+        return;
+      }
     }
 
     setClientError(null);
   }
 
   return (
-    <form action={formAction} onSubmit={handleSubmit} className="grid gap-6 lg:grid-cols-[1fr_360px]">
-      <section className="space-y-5 rounded-lg border bg-card p-6 shadow-sm">
-        <Field label="Nome interno da campanha" name="name" placeholder="Nativ - Lista Maio" />
-        <section className="grid gap-4 rounded-md border bg-slate-50 p-4 sm:grid-cols-2">
-          <label className="block space-y-2">
-            <span className="text-sm font-semibold text-slate-950">Canal do disparo inicial</span>
-            <select
-              name="dispatch_channel"
-              defaultValue="meta"
-              className="h-11 w-full rounded-md border bg-white px-3 text-sm outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10"
-            >
-              <option value="meta">Meta Cloud API - Template oficial</option>
-              <option value="uazapi">Uazapi - Rodizio humanizado</option>
-            </select>
-          </label>
-          <label className="block space-y-2">
-            <span className="text-sm font-semibold text-slate-950">Rodizio Uazapi</span>
-            <select
-              name="uazapi_instance_strategy"
-              defaultValue="round_robin"
-              className="h-11 w-full rounded-md border bg-white px-3 text-sm outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10"
-            >
-              <option value="round_robin">Alternar pela ordem cadastrada</option>
-              <option value="least_recent">Usar numero menos recente</option>
-            </select>
-          </label>
-          <Field
-            label="Intervalo minimo entre mensagens"
-            name="send_interval_min_seconds"
-            placeholder="90"
-            defaultValue="90"
-          />
-          <Field
-            label="Intervalo maximo entre mensagens"
-            name="send_interval_max_seconds"
-            placeholder="240"
-            defaultValue="240"
-          />
-          <label className="block space-y-2 sm:col-span-2">
-            <span className="text-sm font-medium text-slate-700">Mensagem inicial Uazapi</span>
-            <textarea
-              name="initial_message"
-              rows={3}
-              placeholder="Olá, {{nome}}. Obrigado por responder. Como posso te ajudar?"
-              className="w-full rounded-md border bg-white px-3 py-2 text-sm outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10"
-            />
-          </label>
-          <p className="text-xs leading-5 text-muted-foreground sm:col-span-2">
-            O n8n usa uma pausa aleatoria e limita cada instancia a no maximo 20 mensagens por hora. Com 3 instancias selecionadas, a campanha chega a 60 mensagens/hora.
-          </p>
-          <div className="space-y-3 sm:col-span-2">
+    <form
+      action={mode === "outbound" ? outboundAction : inboundAction}
+      onSubmit={handleSubmit}
+      noValidate
+      className="space-y-6"
+    >
+      <section className="rounded-lg border bg-card shadow-sm">
+        <div className="border-b px-6 py-5">
+          <StepHeader steps={steps} activeStep={step} />
+        </div>
+
+        <div className="p-6">
+          {step === 0 ? (
+            <div className="grid gap-4 md:grid-cols-2">
+              <ModeCard
+                active={mode === "outbound"}
+                icon={UploadCloud}
+                title="Outbound por lista"
+                description="Subir planilha, escolher Meta ou Uazapi, disparar e deixar a IA continuar."
+                onClick={() => selectMode("outbound")}
+              />
+              <ModeCard
+                active={mode === "inbound"}
+                icon={MessageSquare}
+                title="Inbound HauzApp"
+                description="Atender automaticamente leads que entrarem no funil Lead Novo do HauzApp."
+                onClick={() => selectMode("inbound")}
+              />
+            </div>
+          ) : mode === "outbound" ? (
             <div>
-              <span className="text-sm font-semibold text-slate-950">Numeros Uazapi desta campanha</span>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                Selecione ate 5 instancias. O rodizio usa apenas os numeros marcados aqui.
-              </p>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {uazapiInstances.map((instance) => (
-                <label key={instance.id} className="flex items-start gap-3 rounded-md border bg-white p-3 text-sm">
-                  <input name="uazapi_instance_ids" type="checkbox" value={instance.id} className="mt-1 h-4 w-4" />
-                  <span>
-                    <span className="block font-semibold text-slate-950">{instance.name}</span>
-                    <span className="block text-xs text-muted-foreground">
-                      {instance.phone || "Numero sem telefone"} • {instance.sent_current_hour}/{Math.min(20, instance.hourly_limit)} nesta hora
-                    </span>
-                  </span>
-                </label>
+              {[1, 2, 3, 4].map((item) => (
+                <div key={`outbound-${item}`} className={step === item ? "block" : "hidden"}>
+                  <OutboundStep
+                    step={item}
+                    channel={channel}
+                    setChannel={setChannel}
+                    agents={agents}
+                    metaPhone={metaPhone}
+                    approvedTemplates={approvedTemplates}
+                    metaTemplatesError={metaTemplates.error}
+                    uazapiInstances={uazapiInstances}
+                    selectedInstances={selectedInstances}
+                    toggleInstance={toggleInstance}
+                    selectedCapacity={selectedCapacity}
+                  />
+                </div>
               ))}
             </div>
-            {uazapiInstances.length === 0 ? (
-              <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                Nenhuma instancia Uazapi ativa. Cadastre em Configuracoes &gt; WhatsApp.
-              </p>
-            ) : null}
-          </div>
-        </section>
-        <section className="rounded-md border bg-slate-50 p-4">
-          <label className="block space-y-2">
-            <span className="text-sm font-semibold text-slate-950">
-              Agente IA que dara continuidade
-            </span>
-            <select
-              name="agent_id"
-              required
-              className="h-11 w-full rounded-md border bg-white px-3 text-sm outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10"
-            >
-              <option value="">Selecione um agente Lead/Meta</option>
-              {agents.map((agent) => (
-                <option key={agent.id} value={agent.id}>
-                  {agent.name}
-                </option>
+          ) : (
+            <div>
+              {[1, 2, 3, 4].map((item) => (
+                <div key={`inbound-${item}`} className={step === item ? "block" : "hidden"}>
+                  <InboundStep step={item} agents={agents} />
+                </div>
               ))}
-            </select>
-          </label>
-          {agents.length === 0 ? (
-            <p className="mt-2 text-xs text-red-700">
-              Nenhum agente Lead/Meta ativo encontrado. Crie um em Configuracoes &gt; Agentes IA.
-            </p>
-          ) : (
-            <p className="mt-2 text-xs text-muted-foreground">
-              Esse agente assume a conversa quando o lead responder ao template da campanha.
-            </p>
+            </div>
           )}
-        </section>
-        <section className="rounded-md border bg-slate-50 p-4">
-          <p className="text-sm font-semibold text-slate-950">Meta WhatsApp conectado</p>
-          {metaPhone.data ? (
-            <p className="mt-1 text-sm text-muted-foreground">
-              {metaPhone.data.displayPhoneNumber || "Numero sem display"} •{" "}
-              {metaPhone.data.verifiedName || "Nome nao retornado"} • qualidade{" "}
-              {metaPhone.data.qualityRating || "nao informada"}
-            </p>
-          ) : (
-            <p className="mt-1 text-sm text-red-700">{metaPhone.error}</p>
-          )}
-        </section>
-        <label className="block space-y-2">
-          <span className="text-sm font-medium text-slate-700">Template Meta aprovado</span>
-          <select
-            name="meta_template_name"
-            className="h-11 w-full rounded-md border bg-white px-3 text-sm outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10"
-          >
-            <option value="">Selecione um template</option>
-            {approvedTemplates.map((template) => (
-              <option key={`${template.name}-${template.language}`} value={template.name}>
-                {template.name} • {template.language} • {template.category || "sem categoria"}
-              </option>
-            ))}
-          </select>
-          {metaTemplates.error ? (
-            <span className="text-xs text-red-700">{metaTemplates.error}</span>
-          ) : null}
-          {!metaTemplates.error && approvedTemplates.length === 0 ? (
-            <span className="text-xs text-muted-foreground">
-              Nenhum template aprovado retornado pela Meta para este WABA.
-            </span>
-          ) : null}
-        </label>
-        <Field label="Idioma do template" name="meta_template_language" placeholder="pt_BR" defaultValue={approvedTemplates[0]?.language ?? "pt_BR"} />
-        <TextArea
-          label="Variaveis do corpo do template"
-          name="meta_template_body_params"
-          placeholder="{{nome}}"
-          defaultValue="{{nome}}"
-          rows={4}
-          required={false}
-        />
-        <section className="space-y-4 rounded-md border bg-slate-50 p-4">
+        </div>
+
+        <div className="flex flex-col gap-3 border-t px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-sm font-semibold text-slate-950">Midia do header do template</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Use quando o template aprovado na Meta tiver header de imagem, video ou documento.
+            {clientError || stateError ? (
+              <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {clientError || stateError}
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                {mode === "outbound"
+                  ? "Fluxo outbound: lista, disparo e continuidade pela IA."
+                  : "Fluxo inbound: HauzApp, IA e repasse ao corretor."}
+              </p>
+            )}
+          </div>
+          <div className="flex gap-2">
+            {step > 0 ? (
+              <button
+                type="button"
+                onClick={previousStep}
+                className="inline-flex h-10 items-center gap-2 rounded-md border bg-white px-4 text-sm font-semibold"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Voltar
+              </button>
+            ) : null}
+            {step < steps.length - 1 ? (
+              <button
+                type="button"
+                onClick={nextStep}
+                className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground"
+              >
+                Avancar
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            ) : (
+              <button
+                type="submit"
+                disabled={pending}
+                className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-70"
+              >
+                <Check className="h-4 w-4" />
+                {pending ? "Salvando..." : mode === "outbound" ? "Criar campanha outbound" : "Ativar campanha inbound"}
+              </button>
+            )}
+          </div>
+        </div>
+      </section>
+    </form>
+  );
+}
+
+function OutboundStep({
+  step,
+  channel,
+  setChannel,
+  agents,
+  metaPhone,
+  approvedTemplates,
+  metaTemplatesError,
+  uazapiInstances,
+  selectedInstances,
+  toggleInstance,
+  selectedCapacity
+}: {
+  step: number;
+  channel: "meta" | "uazapi";
+  setChannel: (channel: "meta" | "uazapi") => void;
+  agents: AgentOption[];
+  metaPhone: MetaPhoneResult;
+  approvedTemplates: MetaTemplatesResult["data"];
+  metaTemplatesError: string | null;
+  uazapiInstances: WhatsappInstanceOption[];
+  selectedInstances: string[];
+  toggleInstance: (id: string) => void;
+  selectedCapacity: number;
+}) {
+  if (step === 1) {
+    return (
+      <div className="space-y-5">
+        <input type="hidden" name="dispatch_channel" value={channel} />
+        <input type="hidden" name="uazapi_instance_strategy" value="round_robin" />
+        <Field label="Nome da campanha" name="name" placeholder="Nativ - lista investidores" />
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <ChoiceCard
+            active={channel === "meta"}
+            title="Meta oficial"
+            description="Use template aprovado para abrir conversa com seguranca."
+            onClick={() => setChannel("meta")}
+          />
+          <ChoiceCard
+            active={channel === "uazapi"}
+            title="Uazapi humanizado"
+            description="Alterne chips conectados e respeite 20 mensagens por hora por numero."
+            onClick={() => setChannel("uazapi")}
+          />
+        </div>
+
+        {channel === "meta" ? (
+          <section className="rounded-md border bg-slate-50 p-4">
+            <p className="text-sm font-semibold text-slate-950">Meta conectada</p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {metaPhone.data
+                ? `${metaPhone.data.displayPhoneNumber || "Numero sem display"} - ${metaPhone.data.verifiedName || "Nome nao retornado"} - qualidade ${metaPhone.data.qualityRating || "nao informada"}`
+                : metaPhone.error || "Meta nao conectada"}
+            </p>
+          </section>
+        ) : (
+          <section className="space-y-3 rounded-md border bg-slate-50 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-slate-950">Numeros que vao disparar</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {selectedInstances.length} selecionado(s), capacidade estimada {selectedCapacity}/h.
+                </p>
+              </div>
+              <Link href={"/settings/whatsapp" as Route} className="rounded-md border bg-white px-3 py-2 text-sm font-semibold">
+                Conectar numero
+              </Link>
+            </div>
+            <div className="grid gap-2 md:grid-cols-2">
+              {uazapiInstances.map((instance) => (
+                <button
+                  key={instance.id}
+                  type="button"
+                  onClick={() => toggleInstance(instance.id)}
+                  className={`rounded-md border p-3 text-left text-sm transition ${
+                    selectedInstances.includes(instance.id) ? "border-teal-500 bg-teal-50" : "bg-white hover:border-slate-300"
+                  }`}
+                >
+                  <span className="block font-semibold text-slate-950">{instance.name}</span>
+                  <span className="mt-1 block text-xs text-muted-foreground">
+                    {instance.phone || "Telefone nao informado"} - {instance.sent_current_hour}/{Math.min(20, instance.hourly_limit)} nesta hora
+                  </span>
+                  {selectedInstances.includes(instance.id) ? (
+                    <input type="hidden" name="uazapi_instance_ids" value={instance.id} />
+                  ) : null}
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+      </div>
+    );
+  }
+
+  if (step === 2) {
+    return (
+      <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
+        <section className="space-y-4">
+          <AgentSelect agents={agents} />
+          <PipelineSelects />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Follow-up corretor apos visita (min)" name="material_title_1" placeholder="15 min" required={false} />
+            <Field label="Escalar sem resposta (min)" name="material_title_2" placeholder="30 min" required={false} />
+          </div>
+        </section>
+        <SideNote
+          icon={Bot}
+          title="Continuidade da IA"
+          lines={[
+            "O agente escolhido responde quando o lead falar no WhatsApp.",
+            "Ao qualificar, o lead entra na etapa configurada e pode seguir para corretor."
+          ]}
+        />
+      </div>
+    );
+  }
+
+  if (step === 3) {
+    return (
+      <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
+        <section className="space-y-5">
+          {channel === "meta" ? (
+            <MetaTemplateFields approvedTemplates={approvedTemplates} metaTemplatesError={metaTemplatesError} />
+          ) : (
+            <>
+              <TextArea
+                label="Primeira mensagem Uazapi"
+                name="initial_message"
+                placeholder="Ola, {{nome}}. Obrigado por responder. Como posso te ajudar?"
+                defaultValue="Ola, {{nome}}. Obrigado por responder. Como posso te ajudar?"
+                rows={4}
+              />
+              <input type="hidden" name="send_interval_min_seconds" value="90" />
+              <input type="hidden" name="send_interval_max_seconds" value="240" />
+            </>
+          )}
+          <section className="rounded-md border bg-slate-50 p-4">
+            <div className="flex items-center gap-3">
+              <UploadCloud className="h-5 w-5 text-slate-600" />
+              <div>
+                <p className="text-sm font-semibold text-slate-950">Planilha de contatos</p>
+                <p className="text-xs text-muted-foreground">CSV ou XLSX com nome e telefone com DDD.</p>
+              </div>
+            </div>
+            <input
+              name="contacts_file"
+              type="file"
+              accept=".csv,.xlsx,.xls"
+              required
+              className="mt-4 block w-full rounded-md border bg-white px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium"
+            />
+          </section>
+        </section>
+        <SideNote
+          icon={ClipboardList}
+          title="Regra de envio"
+          lines={[
+            channel === "meta" ? "Template aprovado abre a conversa pela API oficial." : "Cada chip selecionado envia ate 20 mensagens por hora.",
+            "Quando o cliente responder, o webhook chama o agente automaticamente."
+          ]}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <ReviewPanel
+      title="Revisao outbound"
+      items={[
+        `Canal inicial: ${channel === "meta" ? "Meta oficial" : "Uazapi com rodizio"}`,
+        channel === "uazapi" ? `Numeros selecionados: ${selectedInstances.length}` : "Template Meta selecionado na etapa anterior",
+        "Agente IA vai continuar as respostas",
+        "CRM interno acompanha qualquer falha ou resposta"
+      ]}
+    />
+  );
+}
+
+function InboundStep({ step, agents }: { step: number; agents: AgentOption[] }) {
+  if (step === 1) {
+    return (
+      <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
+        <section className="space-y-4">
+          <Field label="Nome da campanha inbound" name="name" placeholder="Inbound HauzApp - Lead Novo" defaultValue="Inbound HauzApp - Lead Novo" />
+          <div className="grid gap-4 md:grid-cols-3">
+            <SelectField label="Quando o lead entra" name="prospection_stage_id" defaultValue="0" options={stageOptions} />
+            <SelectField label="Enquanto a IA atende" name="contact_stage_id" defaultValue="2" options={stageOptions} />
+            <SelectField label="Depois de qualificado" name="qualified_stage_id" defaultValue="3" options={stageOptions} />
+          </div>
+        </section>
+        <SideNote
+          icon={Plug}
+          title="HauzApp"
+          lines={[
+            "O n8n busca negocios em Lead Novo.",
+            "Quando a IA inicia, move para Qualificando com a Nay.",
+            "Quando qualifica, move para a etapa de corretor."
+          ]}
+        />
+      </div>
+    );
+  }
+
+  if (step === 2) {
+    return (
+      <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
+        <section className="space-y-4">
+          <AgentSelect agents={agents} />
+          <label className="flex items-center gap-3 rounded-md border bg-white px-3 py-3 text-sm">
+            <input name="auto_attend" type="checkbox" defaultChecked className="h-4 w-4" />
+            Atender automaticamente novos leads
+          </label>
+          <label className="flex items-center gap-3 rounded-md border bg-white px-3 py-3 text-sm">
+            <input name="auto_greet" type="checkbox" className="h-4 w-4" />
+            Enviar saudacao proativa ao importar
+          </label>
+        </section>
+        <SideNote
+          icon={Bot}
+          title="Prompt do agente"
+          lines={[
+            "Edite o prompt completo em Agentes IA.",
+            "Esta campanha apenas escolhe qual agente assume os leads desse funil."
+          ]}
+          href="/settings/agents"
+          hrefLabel="Abrir agentes"
+        />
+      </div>
+    );
+  }
+
+  if (step === 3) {
+    return (
+      <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
+        <section className="grid gap-4 md:grid-cols-2">
+          <Field label="Cobrar corretor apos visita" name="broker_followup_minutes" placeholder="15" defaultValue="15" />
+          <Field label="Escalar sem resposta" name="broker_escalation_minutes" placeholder="30" defaultValue="30" />
+          <div className="rounded-md border bg-slate-50 p-4 md:col-span-2">
+            <p className="text-sm font-semibold text-slate-950">Webhook Uazapi para continuidade</p>
+            <p className="mt-2 rounded-md bg-white px-3 py-2 font-mono text-xs text-slate-700">
+              https://pointer-campanhas.vercel.app/api/webhooks/uazapi
+            </p>
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">
+              Marque envio de mensagem recebida, texto da mensagem, telefone/remetente, nome do contato e ID da mensagem.
             </p>
           </div>
-          <label className="block space-y-2">
-            <span className="text-sm font-medium text-slate-700">Tipo de midia</span>
-            <select name="meta_header_media_type" className="h-10 w-full rounded-md border bg-white px-3 text-sm">
-              <option value="">Detectar automaticamente</option>
-              <option value="video">Video</option>
-              <option value="image">Imagem</option>
-              <option value="document">Documento</option>
-            </select>
-          </label>
-          <input
-            name="meta_header_media_file"
-            type="file"
-            accept="image/*,video/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx"
-            className="block w-full rounded-md border bg-white px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium"
-          />
-          <p className="text-xs leading-5 text-muted-foreground">
-            Na Vercel, anexos acima de 4 MB precisam ser enviados pela Meta antes. Depois cole o Media ID abaixo.
-          </p>
-          <Field
-            label="Media ID da Meta"
-            name="meta_header_media_id"
-            placeholder="Opcional, se a midia ja estiver enviada"
-            required={false}
-          />
         </section>
-      </section>
+        <SideNote
+          icon={MessageSquare}
+          title="Cobranca do corretor"
+          lines={[
+            "Primeira cobranca em 15 minutos.",
+            "Sem resposta, escala para administrador.",
+            "O SLA continua pelo fluxo n8n."
+          ]}
+        />
+      </div>
+    );
+  }
 
-      <aside className="space-y-5">
-        <section className="rounded-lg border bg-card p-6 shadow-sm">
-          <div className="flex h-12 w-12 items-center justify-center rounded-md bg-muted text-slate-700">
-            <UploadCloud className="h-6 w-6" />
+  return (
+    <ReviewPanel
+      title="Revisao inbound"
+      items={[
+        "Origem: HauzApp Lead Novo",
+        "Atendimento: agente IA selecionado",
+        "Qualificado: move para etapa de corretor",
+        "Corretor: follow-up e escalonamento configurados"
+      ]}
+    />
+  );
+}
+
+function StepHeader({ steps, activeStep }: { steps: string[]; activeStep: number }) {
+  return (
+    <div className="grid gap-2 md:grid-cols-5">
+      {steps.map((label, index) => (
+        <div key={label} className={`rounded-md border px-3 py-2 text-sm ${index === activeStep ? "border-teal-500 bg-teal-50 text-teal-900" : "bg-white text-muted-foreground"}`}>
+          <span className="font-semibold">{index + 1}. </span>{label}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ModeCard({
+  active,
+  icon: Icon,
+  title,
+  description,
+  onClick
+}: {
+  active: boolean;
+  icon: LucideIcon;
+  title: string;
+  description: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-lg border p-5 text-left transition ${active ? "border-teal-500 bg-teal-50" : "bg-white hover:border-slate-300"}`}
+    >
+      <Icon className="h-5 w-5 text-teal-700" />
+      <p className="mt-4 text-base font-semibold text-slate-950">{title}</p>
+      <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
+    </button>
+  );
+}
+
+function ChoiceCard({
+  active,
+  title,
+  description,
+  onClick
+}: {
+  active: boolean;
+  title: string;
+  description: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-md border p-4 text-left text-sm transition ${active ? "border-teal-500 bg-teal-50" : "bg-white hover:border-slate-300"}`}
+    >
+      <span className="block font-semibold text-slate-950">{title}</span>
+      <span className="mt-1 block leading-5 text-muted-foreground">{description}</span>
+    </button>
+  );
+}
+
+function AgentSelect({ agents }: { agents: AgentOption[] }) {
+  return (
+    <label className="block space-y-2">
+      <span className="text-sm font-semibold text-slate-950">Agente IA</span>
+      <select name="agent_id" required className="h-11 w-full rounded-md border bg-white px-3 text-sm">
+        <option value="">Selecione um agente</option>
+        {agents.map((agent) => (
+          <option key={agent.id} value={agent.id}>
+            {agent.name}
+          </option>
+        ))}
+      </select>
+      {agents.length === 0 ? (
+        <span className="text-xs text-red-700">Crie um agente ativo antes de continuar.</span>
+      ) : null}
+    </label>
+  );
+}
+
+function PipelineSelects() {
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      <SelectField label="Lead qualificado vai para" name="material_type_1" defaultValue="document" options={[{ label: "Aguardando atendimento / corretor", value: "document" }]} />
+      <SelectField label="CRM interno acompanha como" name="material_type_2" defaultValue="document" options={[{ label: "Qualificado", value: "document" }]} />
+    </div>
+  );
+}
+
+function MetaTemplateFields({
+  approvedTemplates,
+  metaTemplatesError
+}: {
+  approvedTemplates: MetaTemplatesResult["data"];
+  metaTemplatesError: string | null;
+}) {
+  return (
+    <section className="space-y-4">
+      <label className="block space-y-2">
+        <span className="text-sm font-semibold text-slate-950">Template aprovado da Meta</span>
+        <select name="meta_template_name" required className="h-11 w-full rounded-md border bg-white px-3 text-sm">
+          <option value="">Selecione um template</option>
+          {approvedTemplates.map((template) => (
+            <option key={`${template.name}-${template.language}`} value={template.name}>
+              {template.name} - {template.language} - {template.category || "sem categoria"}
+            </option>
+          ))}
+        </select>
+        {metaTemplatesError ? <span className="text-xs text-red-700">{metaTemplatesError}</span> : null}
+      </label>
+      <input type="hidden" name="send_interval_min_seconds" value="90" />
+      <input type="hidden" name="send_interval_max_seconds" value="240" />
+      <Field label="Idioma do template" name="meta_template_language" placeholder="pt_BR" defaultValue={approvedTemplates[0]?.language ?? "pt_BR"} />
+      <TextArea label="Variaveis do template" name="meta_template_body_params" placeholder="{{nome}}" defaultValue="{{nome}}" rows={3} required={false} />
+      <div className="grid gap-4 md:grid-cols-2">
+        <SelectField
+          label="Tipo de midia do header"
+          name="meta_header_media_type"
+          defaultValue=""
+          options={[
+            { label: "Sem midia / detectar", value: "" },
+            { label: "Video", value: "video" },
+            { label: "Imagem", value: "image" },
+            { label: "Documento", value: "document" }
+          ]}
+        />
+        <Field label="Media ID da Meta" name="meta_header_media_id" placeholder="Opcional" required={false} />
+      </div>
+      <input name="meta_header_media_file" type="file" accept="image/*,video/*,.pdf,.doc,.docx" className="block w-full rounded-md border bg-white px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium" />
+    </section>
+  );
+}
+
+function SideNote({
+  icon: Icon,
+  title,
+  lines,
+  href,
+  hrefLabel
+}: {
+  icon: LucideIcon;
+  title: string;
+  lines: string[];
+  href?: Route;
+  hrefLabel?: string;
+}) {
+  return (
+    <aside className="rounded-lg border bg-slate-50 p-5">
+      <Icon className="h-5 w-5 text-teal-700" />
+      <p className="mt-4 text-sm font-semibold text-slate-950">{title}</p>
+      <ul className="mt-3 space-y-2 text-sm leading-6 text-muted-foreground">
+        {lines.map((line) => (
+          <li key={line}>{line}</li>
+        ))}
+      </ul>
+      {href && hrefLabel ? (
+        <Link href={href} className="mt-4 inline-flex rounded-md border bg-white px-3 py-2 text-sm font-semibold">
+          {hrefLabel}
+        </Link>
+      ) : null}
+    </aside>
+  );
+}
+
+function ReviewPanel({ title, items }: { title: string; items: string[] }) {
+  return (
+    <section className="rounded-lg border bg-slate-50 p-5">
+      <p className="text-base font-semibold text-slate-950">{title}</p>
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        {items.map((item) => (
+          <div key={item} className="rounded-md border bg-white px-4 py-3 text-sm text-slate-700">
+            {item}
           </div>
-          <h2 className="mt-4 text-base font-semibold text-slate-950">Planilha de contatos</h2>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            Envie CSV ou XLSX. O importador procura colunas como nome, telefone, celular ou
-            WhatsApp e normaliza para o padrao 55DDDnumero. Numeros sem DDD sao ignorados.
-          </p>
-          <input
-            name="contacts_file"
-            type="file"
-            accept=".csv,.xlsx,.xls"
-            required
-            className="mt-5 block w-full rounded-md border bg-white px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium"
-          />
-        </section>
+        ))}
+      </div>
+    </section>
+  );
+}
 
-        {clientError || state?.error ? (
-          <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-            {clientError || state?.error}
-          </p>
-        ) : null}
-
-        <button
-          type="submit"
-          disabled={pending}
-          className="inline-flex h-11 w-full items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-70"
-        >
-          {pending ? "Criando campanha..." : "Criar campanha e importar"}
-        </button>
-      </aside>
-    </form>
+function SelectField({
+  label,
+  name,
+  defaultValue,
+  options
+}: {
+  label: string;
+  name: string;
+  defaultValue: string;
+  options: Array<{ label: string; value: string }>;
+}) {
+  return (
+    <label className="block space-y-2">
+      <span className="text-sm font-medium text-slate-700">{label}</span>
+      <select name={name} defaultValue={defaultValue} className="h-11 w-full rounded-md border bg-white px-3 text-sm">
+        {options.map((option) => (
+          <option key={`${name}-${option.value}`} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 

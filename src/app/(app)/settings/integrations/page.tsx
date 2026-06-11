@@ -1,4 +1,6 @@
 import { Badge } from "@/components/badge";
+import Link from "next/link";
+import type { Route } from "next";
 import { PageHeader } from "@/components/page-header";
 import { getCurrentProfile } from "@/lib/auth/organization";
 import { createClient } from "@/lib/supabase/server";
@@ -58,8 +60,8 @@ export default async function IntegrationsPage() {
       <section className="grid gap-6 xl:grid-cols-2">
         <form action={saveHauzappIntegrationAction} className="space-y-5 rounded-lg border bg-card p-6 shadow-sm">
           <IntegrationTitle
-            title="Campanha inbound HauzApp"
-            description="Atende automaticamente os leads que entram em Lead Novo no HauzApp."
+            title="Conexão HauzApp"
+            description="Chave da API e sincronização dos negócios do CRM."
             active={Boolean(hauzapp?.active)}
           />
 
@@ -70,53 +72,19 @@ export default async function IntegrationsPage() {
             placeholder={hauzapp?.config?.apiKey ? "Chave salva. Preencha apenas para trocar." : "Cole a chave HauzApp"}
           />
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field
-              name="prospectionStageId"
-              label="Etapa Lead Novo"
-              type="number"
-              defaultValue={String(configNumber(hauzapp?.config, "prospectionStageId", 0))}
-            />
-            <Field
-              name="contactStageId"
-              label="Etapa Qualificando com a Nay"
-              type="number"
-              defaultValue={String(configNumber(hauzapp?.config, "contactStageId", 2))}
-            />
-            <Field
-              name="qualifiedStageId"
-              label="Etapa corretor/qualificado"
-              type="number"
-              defaultValue={String(configNumber(hauzapp?.config, "qualifiedStageId", 3))}
-            />
+          <input type="hidden" name="prospectionStageId" value={String(configNumber(hauzapp?.config, "prospectionStageId", 0))} />
+          <input type="hidden" name="contactStageId" value={String(configNumber(hauzapp?.config, "contactStageId", 2))} />
+          <input type="hidden" name="qualifiedStageId" value={String(configNumber(hauzapp?.config, "qualifiedStageId", 3))} />
+          <input type="hidden" name="leadAgentId" value={configString(hauzapp?.config, "leadAgentId")} />
+          <input type="hidden" name="autoAttendLeadNovo" value={configBoolean(hauzapp?.config, "autoAttendLeadNovo", true) ? "on" : ""} />
+          <input type="hidden" name="autoGreetProspects" value={configBoolean(hauzapp?.config, "autoGreetProspects", false) ? "on" : ""} />
+
+          <div className="rounded-md border bg-slate-50 p-4 text-sm text-muted-foreground">
+            Funil, agente e follow-ups do inbound ficam no assistente de campanha.
+            <Link href={"/campaigns/new" as Route} className="ml-2 font-semibold text-teal-700">
+              Criar campanha inbound
+            </Link>
           </div>
-
-          <AgentSelect
-            agents={leadAgents}
-            name="leadAgentId"
-            label="Agente que atende leads HauzApp"
-            selected={configString(hauzapp?.config, "leadAgentId")}
-          />
-
-          <label className="flex items-center gap-3 rounded-md border bg-white px-3 py-3 text-sm">
-            <input
-              name="autoAttendLeadNovo"
-              type="checkbox"
-              defaultChecked={configBoolean(hauzapp?.config, "autoAttendLeadNovo", true)}
-              className="h-4 w-4"
-            />
-            Ativar atendimento IA para leads que entrarem em Lead Novo
-          </label>
-
-          <label className="flex items-center gap-3 rounded-md border bg-white px-3 py-3 text-sm">
-            <input
-              name="autoGreetProspects"
-              type="checkbox"
-              defaultChecked={configBoolean(hauzapp?.config, "autoGreetProspects", false)}
-              className="h-4 w-4"
-            />
-            Enviar primeira mensagem pela Uazapi ao sincronizar Lead Novo
-          </label>
 
           <button className="h-10 w-full rounded-md bg-primary text-sm font-semibold text-primary-foreground">
             Salvar HauzApp
