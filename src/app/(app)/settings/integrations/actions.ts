@@ -15,7 +15,7 @@ const schema = z.object({
 
 const hauzappSchema = z.object({
   apiKey: z.string().optional(),
-  prospectionStageId: z.coerce.number().int().min(0).default(1),
+  prospectionStageId: z.coerce.number().int().min(0).default(0),
   qualifiedStageId: z.coerce.number().int().min(0).default(3),
   leadAgentId: z.string().uuid().optional().or(z.literal("")),
   autoGreetProspects: z.coerce.boolean().default(false)
@@ -67,7 +67,7 @@ export async function saveIntegrationAction(formData: FormData) {
 export async function saveHauzappIntegrationAction(formData: FormData) {
   const parsed = hauzappSchema.safeParse({
     apiKey: formData.get("apiKey") || undefined,
-    prospectionStageId: formData.get("prospectionStageId") || 1,
+    prospectionStageId: formData.get("prospectionStageId") || 0,
     qualifiedStageId: formData.get("qualifiedStageId") || 3,
     leadAgentId: formData.get("leadAgentId") || "",
     autoGreetProspects: formData.get("autoGreetProspects") === "on"

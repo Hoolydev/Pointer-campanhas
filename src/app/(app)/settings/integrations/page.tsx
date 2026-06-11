@@ -73,13 +73,13 @@ export default async function IntegrationsPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             <Field
               name="prospectionStageId"
-              label="Etapa Prospecção"
+              label="Etapa Lead Novo"
               type="number"
-              defaultValue={String(configNumber(hauzapp?.config, "prospectionStageId", 1))}
+              defaultValue={String(configNumber(hauzapp?.config, "prospectionStageId", 0))}
             />
             <Field
               name="qualifiedStageId"
-              label="Etapa Lead qualificado"
+              label="Etapa corretor/qualificado"
               type="number"
               defaultValue={String(configNumber(hauzapp?.config, "qualifiedStageId", 3))}
             />

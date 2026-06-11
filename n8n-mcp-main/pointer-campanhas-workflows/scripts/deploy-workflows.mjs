@@ -167,7 +167,10 @@ function buildMaterializedValues() {
     HAUZAPP_BASE_URL:
       process.env.HAUZAPP_BASE_URL || "https://hauzhub.com.br/requisicao/api/integracao.php",
     HAUZAPP_API_KEY: process.env.HAUZAPP_API_KEY || "",
-    HAUZAPP_PROSPECTION_STAGE_ID: process.env.HAUZAPP_PROSPECTION_STAGE_ID || "0"
+    HAUZAPP_PROSPECTION_STAGE_ID: process.env.HAUZAPP_PROSPECTION_STAGE_ID || "0",
+    HAUZAPP_CONTACT_STAGE_ID: process.env.HAUZAPP_CONTACT_STAGE_ID || "2",
+    HAUZAPP_QUALIFIED_STAGE_ID: process.env.HAUZAPP_QUALIFIED_STAGE_ID || "3",
+    HAUZAPP_DATA_INICIAL: process.env.HAUZAPP_DATA_INICIAL || "01/01/2025"
   };
 }
 

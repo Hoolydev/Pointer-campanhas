@@ -284,7 +284,14 @@ select jsonb_build_object(
   'history', (select messages from history),
   'agent_materials', (select materials from agent_materials),
   'campaign_materials', (select materials from campaign_materials),
-  'uazapi_config', coalesce((select config from uazapi_config), '{}'::jsonb)
+  'uazapi_config', coalesce((select config from uazapi_config), '{}'::jsonb),
+  'hauzapp_cliente_id', coalesce(
+    conv.hauzapp_cliente_id,
+    contact.hauzapp_cliente_id,
+    i.payload->>'hauzapp_cliente_id',
+    i.payload->>'clienteID',
+    i.payload->>'clienteId'
+  )
 ) as context
 from conversation_row conv
 join contact_row contact on contact.id = conv.contact_id
@@ -530,6 +537,7 @@ updated_lead as (
     score = greatest(0, least(100, coalesce((i.q->>'score')::int, 0))),
     summary = coalesce(nullif(i.q->>'summary', ''), l.summary),
     stage = coalesce(nullif(i.q->>'stage', ''), l.stage),
+    hauzapp_cliente_id = coalesce(l.hauzapp_cliente_id, nullif(i.ctx->>'hauzapp_cliente_id', '')),
     last_stage_updated_at = now()
   from input i, lead_existing existing
   where l.id = existing.id
@@ -552,6 +560,7 @@ inserted_lead as (
     score,
     summary,
     stage,
+    hauzapp_cliente_id,
     last_stage_updated_at
   )
   select
@@ -570,6 +579,7 @@ inserted_lead as (
     greatest(0, least(100, coalesce((q->>'score')::int, 0))),
     nullif(q->>'summary', ''),
     coalesce(nullif(q->>'stage', ''), 'qualifying'),
+    nullif(ctx->>'hauzapp_cliente_id', ''),
     now()
   from input
   where not exists (select 1 from lead_existing)
@@ -658,6 +668,8 @@ select jsonb_build_object(
   'reply', q->>'reply',
   'qualified', coalesce((q->>'qualified')::boolean, false),
   'stage', q->>'stage',
+  'hauzapp_cliente_id', lead.hauzapp_cliente_id,
+  'hauzapp_stage_id', lead.hauzapp_stage_id,
   'message_split_enabled', coalesce((ctx->'agent'->>'message_split_enabled')::boolean, true),
   'typing_words_per_minute', coalesce((ctx->'agent'->>'typing_words_per_minute')::int, 150),
   'uazapi_config', ctx->'uazapi_config',
@@ -667,6 +679,54 @@ from input, lead_row lead;
 `;
 
 return [{ json: { sql: query } }];
+});
+
+const syncHauzappStage = code(async function () {
+const outbound = typeof $json.outbound === "string" ? JSON.parse($json.outbound) : $json.outbound;
+const clienteId = outbound?.hauzapp_cliente_id;
+const currentStageId = Number(outbound?.hauzapp_stage_id);
+const contactStageId = Number("__HAUZAPP_CONTACT_STAGE_ID__");
+const qualifiedStageId = Number("__HAUZAPP_QUALIFIED_STAGE_ID__");
+const targetStageId = outbound?.qualified ? qualifiedStageId : contactStageId;
+
+if (outbound?.channel !== "uazapi" || !clienteId || !targetStageId || currentStageId === targetStageId) {
+  return [{ json: { outbound } }];
+}
+
+try {
+  const baseUrl = "__HAUZAPP_BASE_URL__";
+  const apiKey = "__HAUZAPP_API_KEY__";
+  if (!baseUrl || !apiKey) throw new Error("HauzApp credentials are missing");
+  const response = await fetch(`${baseUrl}?method=changeNegociacaoEtapa`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chave: apiKey,
+      clienteID: Number(clienteId),
+      funilStageID: targetStageId
+    })
+  });
+  const payload = await response.json().catch(() => ({}));
+  const accepted = response.ok && ["success", "etapa_already"].includes(String(payload.response || ""));
+  outbound.hauzapp_stage_sync = {
+    attempted: true,
+    ok: accepted,
+    target_stage_id: targetStageId,
+    response: payload
+  };
+  if (accepted) {
+    outbound.hauzapp_target_stage_id = targetStageId;
+  }
+} catch (error) {
+  outbound.hauzapp_stage_sync = {
+    attempted: true,
+    ok: false,
+    target_stage_id: targetStageId,
+    error: error instanceof Error ? error.message : "Erro desconhecido ao alterar etapa no HauzApp"
+  };
+}
+
+return [{ json: { outbound } }];
 });
 
 const sendReply = code(async function () {
@@ -765,20 +825,33 @@ function json(value) {
 const outbound = $json.outbound;
 const results = $json.results || [];
 const externalMessageId = results.find((item) => item.externalMessageId)?.externalMessageId || null;
+const hauzappTargetStageId = outbound.hauzapp_target_stage_id ? Number(outbound.hauzapp_target_stage_id) : null;
 
 const query = `
+with message_update as (
 update public.messages
 set
   status = 'sent',
   external_message_id = ${sql(externalMessageId)},
-  payload = coalesce(payload, '{}'::jsonb) || ${json({ sendResults: results })}::jsonb
+  payload = coalesce(payload, '{}'::jsonb) || ${json({ sendResults: results, hauzappStageSync: outbound.hauzapp_stage_sync || null })}::jsonb
 where id = ${sql(outbound.message_id)}::uuid
-returning jsonb_build_object(
+returning id
+),
+lead_update as (
+  update public.leads
+  set
+    hauzapp_stage_id = coalesce(${hauzappTargetStageId ?? "null"}::int, hauzapp_stage_id),
+    last_stage_updated_at = case when ${hauzappTargetStageId ?? "null"}::int is null then last_stage_updated_at else now() end
+  where id = ${sql(outbound.lead_id)}::uuid
+  returning id
+)
+select jsonb_build_object(
   'processed', true,
   'sent', true,
   'lead_id', ${sql(outbound.lead_id)},
   'conversation_id', ${sql(outbound.conversation_id)},
-  'segments', ${results.length}
+  'segments', ${results.length},
+  'hauzapp_stage_sync', ${json(outbound.hauzapp_stage_sync || null)}::jsonb
 ) as response;
 `;
 
@@ -939,6 +1012,16 @@ export default {
       name: "Send WhatsApp Reply",
       type: "n8n-nodes-base.code",
       typeVersion: 2,
+      position: [1220, 180]
+    },
+    {
+      parameters: {
+        jsCode: syncHauzappStage
+      },
+      id: "sync-hauzapp-stage",
+      name: "Sync HauzApp Stage",
+      type: "n8n-nodes-base.code",
+      typeVersion: 2,
       position: [980, 180]
     },
     {
@@ -1012,6 +1095,9 @@ export default {
       main: [[{ node: "Save AI Result", type: "main", index: 0 }]]
     },
     "Save AI Result": {
+      main: [[{ node: "Sync HauzApp Stage", type: "main", index: 0 }]]
+    },
+    "Sync HauzApp Stage": {
       main: [[{ node: "Send WhatsApp Reply", type: "main", index: 0 }]]
     },
     "Send WhatsApp Reply": {

@@ -48,7 +48,7 @@ export async function sendQualifiedLeadToHauzapp({
     baseUrl: configString(config, ["baseUrl", "base_url"], process.env.HAUZAPP_BASE_URL),
     apiKey: configString(config, ["apiKey", "api_key", "chave"], process.env.HAUZAPP_API_KEY)
   };
-  const stageId = configNumber(config, ["qualifiedStageId", "qualified_stage_id"], Number(process.env.HAUZAPP_QUALIFIED_STAGE_ID || 2));
+  const stageId = configNumber(config, ["qualifiedStageId", "qualified_stage_id"], Number(process.env.HAUZAPP_QUALIFIED_STAGE_ID || 3));
   const leadName = lead.name && lead.name.length >= 3 ? lead.name : `Lead ${lead.phone}`;
   let negotiation =
     lead.hauzapp_cliente_id ? { clienteID: lead.hauzapp_cliente_id } : await findNegotiationByPhone(lead.phone, hauzappConfig);

@@ -28,7 +28,13 @@ function isProspection(item) {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
-  return stageId === configuredId || stageName.includes("prospeccao") || stageName.includes("prospec");
+  return (
+    stageId === configuredId ||
+    stageName.includes("lead novo") ||
+    stageName.includes("novo lead") ||
+    stageName.includes("prospeccao") ||
+    stageName.includes("prospec")
+  );
 }
 
 function parseDetails(value) {
@@ -256,7 +262,7 @@ inserted_leads as (
     'hauzapp'::public.lead_source,
     'new',
     case when row.temperature >= 2 then 80 when row.temperature = 1 then 55 else 30 end,
-    'Lead importado da etapa ' || coalesce(row.stage_name, row.stage_id::text, 'Prospecção') || ' do HauzApp.',
+    'Lead importado da etapa ' || coalesce(row.stage_name, row.stage_id::text, 'Lead Novo') || ' do HauzApp.',
     'hauzapp_prospection',
     row.cliente_id,
     row.stage_id,
@@ -281,7 +287,7 @@ updated_leads as (
     stage = case when l.stage in ('new', 'hauzapp_prospection') then 'hauzapp_prospection' else l.stage end,
     qualification_status = case when l.qualification_status = 'new' then 'new' else l.qualification_status end,
     hauzapp_stage_id = row.stage_id,
-    summary = coalesce(l.summary, 'Lead importado da etapa ' || coalesce(row.stage_name, row.stage_id::text, 'Prospecção') || ' do HauzApp.'),
+    summary = coalesce(l.summary, 'Lead importado da etapa ' || coalesce(row.stage_name, row.stage_id::text, 'Lead Novo') || ' do HauzApp.'),
     last_stage_updated_at = now()
   from rows row
   where l.organization_id = row.organization_id
@@ -371,7 +377,7 @@ export default {
         },
         sendBody: true,
         specifyBody: "json",
-        jsonBody: "={\"chave\":\"__HAUZAPP_API_KEY__\"}",
+        jsonBody: "={\"chave\":\"__HAUZAPP_API_KEY__\",\"search\":\"\",\"dataInicial\":\"__HAUZAPP_DATA_INICIAL__\"}",
         options: {}
       },
       id: "get-hauzapp-negotiations",

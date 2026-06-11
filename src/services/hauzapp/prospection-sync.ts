@@ -28,7 +28,7 @@ export async function syncHauzappProspectionLeads({
   const prospectionStageId = configNumber(
     hauzappConfig,
     ["prospectionStageId", "prospection_stage_id"],
-    Number(process.env.HAUZAPP_PROSPECTION_STAGE_ID || 1)
+    Number(process.env.HAUZAPP_PROSPECTION_STAGE_ID || 0)
   );
   const autoGreet = configBoolean(hauzappConfig, ["autoGreetProspects", "auto_greet_prospects"], false);
   const negotiations = await getAllNegociacoes(undefined, {
@@ -126,7 +126,13 @@ function isProspectionStage(negotiation: HauzappNegotiation, prospectionStageId:
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
 
-  return stageId === prospectionStageId || stageName.includes("prospeccao") || stageName.includes("prospe");
+  return (
+    stageId === prospectionStageId ||
+    stageName.includes("lead novo") ||
+    stageName.includes("novo lead") ||
+    stageName.includes("prospeccao") ||
+    stageName.includes("prospe")
+  );
 }
 
 async function upsertProspectionContact(

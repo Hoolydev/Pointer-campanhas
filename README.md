@@ -163,31 +163,18 @@ Os nomes das etapas no CRM aparecem como 1, 2 e 3 para o usuario, mas a API reto
 HAUZAPP_BASE_URL=https://hauzhub.com.br/requisicao/api/integracao.php
 HAUZAPP_API_KEY=
 HAUZAPP_PROSPECTION_STAGE_ID=0
-HAUZAPP_CONTACT_STAGE_ID=1
-HAUZAPP_QUALIFIED_STAGE_ID=2
+HAUZAPP_CONTACT_STAGE_ID=2
+HAUZAPP_QUALIFIED_STAGE_ID=3
+HAUZAPP_DATA_INICIAL=01/01/2025
 ```
 
-Tambem da para controlar pelo front em `/settings/integrations`, criando uma integracao `HauzApp` com JSON:
+No funil atual do HauzApp, o sistema considera:
 
-```json
-{
-  "apiKey": "sua-chave",
-  "prospectionStageId": 1,
-  "qualifiedStageId": 3,
-  "leadAgentId": "uuid-do-agente",
-  "autoGreetProspects": false
-}
-```
+- `0` como `Lead Novo`, etapa lida pelo sincronizador.
+- `2` como `Qualificando com a Nay`, etapa usada quando a IA inicia atendimento pela Uazapi.
+- `3` como `Aguardando atendimento / corretor`, etapa usada quando o lead fica qualificado.
 
-E uma integracao `Uazapi`:
-
-```json
-{
-  "baseUrl": "https://sua-uazapi",
-  "token": "seu-token",
-  "leadAgentId": "uuid-do-agente"
-}
-```
+Essas conexoes tambem podem ser ajustadas pelo front em `/settings/integrations`, sem editar JSON manualmente.
 
 Configure o webhook da Uazapi para:
 
